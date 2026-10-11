@@ -1,0 +1,14 @@
+{
+  "name": "@tmc/core",
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "description": "薄肌俱乐部共享核心：类型、校验、业务规则、推算（Web / 服务端 / 小程序共用）",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  }
+}

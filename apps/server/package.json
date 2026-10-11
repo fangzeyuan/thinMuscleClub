@@ -1,0 +1,32 @@
+{
+  "name": "@tmc/server",
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "build": "node build.mjs",
+    "db:generate": "drizzle-kit generate",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "0.2.14",
+    "@fastify/cookie": "11.0.1",
+    "@fastify/rate-limit": "10.2.1",
+    "@tmc/core": "*",
+    "dotenv": "16.4.5",
+    "drizzle-orm": "0.36.4",
+    "fastify": "5.1.0",
+    "jose": "5.9.6",
+    "pg": "8.13.1",
+    "zod": "3.23.8"
+  },
+  "devDependencies": {
+    "@types/pg": "8.11.10",
+    "drizzle-kit": "0.28.1",
+    "esbuild": "0.24.0",
+    "tsx": "4.19.2"
+  }
+}

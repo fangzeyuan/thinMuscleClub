@@ -1,0 +1,19 @@
+# 本地开发数据库。线上使用腾讯云 TencentDB for PostgreSQL。
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: tmc
+      POSTGRES_PASSWORD: tmc_dev
+      POSTGRES_DB: tmc
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tmc"]
+      interval: 2s
+      retries: 20
+volumes:
+  pgdata:
