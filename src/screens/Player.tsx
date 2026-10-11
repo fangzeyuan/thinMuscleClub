@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { TAG_LABEL, WARMUP } from '../data/exercises'
 import type { Workout, WorkItem } from '../lib/plan'
+import type { SessionDetails } from '../lib/training'
 import ExGlyph from './ExGlyph'
 
 type Step =
@@ -41,7 +42,19 @@ function beep(freq = 880, ms = 120) {
   }
 }
 
-export default function Player({ workout, onExit, onFinish }: { workout: Workout; onExit: () => void; onFinish: (sec: number) => void }) {
+/** 把已完成的组汇总成训练明细 */
+function summarize(done: Step[]): SessionDetails {
+  const map = new Map<string, NonNullable<SessionDetails['exercises']>[number]>()
+  for (const s of done) {
+    if (s.kind !== 'work') continue
+    const ex = s.item.ex
+    if (!map.has(ex.id)) map.set(ex.id, { exerciseId: ex.id, name: ex.name, sets: [] })
+    map.get(ex.id)!.sets.push(ex.mode === 'time' ? { sec: s.item.amount } : { reps: s.item.amount })
+  }
+  return { exercises: [...map.values()] }
+}
+
+export default function Player({ workout, onExit, onFinish }: { workout: Workout; onExit: () => void; onFinish: (sec: number, details: SessionDetails) => void }) {
   const steps = useMemo(() => flatten(workout), [workout])
   const [i, setI] = useState(-1) // -1 = 准备倒计时
   const [left, setLeft] = useState(3)
@@ -53,7 +66,7 @@ export default function Player({ workout, onExit, onFinish }: { workout: Workout
 
   const go = (n: number) => {
     if (n >= steps.length) {
-      onFinish(elapsed.current)
+      onFinish(elapsed.current, summarize(steps))
       return
     }
     const s = steps[Math.max(0, n)]
@@ -214,7 +227,7 @@ export default function Player({ workout, onExit, onFinish }: { workout: Workout
               继续训练
             </button>
             {doneWork > 0 && (
-              <button className="btn ghost block" onClick={() => onFinish(elapsed.current)}>
+              <button className="btn ghost block" onClick={() => onFinish(elapsed.current, summarize(steps.slice(0, Math.max(0, i))))}>
                 结束并记录
               </button>
             )}

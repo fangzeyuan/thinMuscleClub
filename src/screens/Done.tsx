@@ -1,5 +1,5 @@
 import type { Workout } from '../lib/plan'
-import type { Feedback } from '../lib/store'
+import type { Rpe as Feedback } from '../lib/training'
 
 interface Props {
   workout: Workout

@@ -53,6 +53,24 @@ export const TARGET_INFO: Record<Target, { label: string; desc: string; tags: Ta
   posture: { label: '挺拔体态', desc: '改善圆肩驼背', tags: ['posture', 'back'] },
 }
 
+/* ---------------- 热量（所有地方共用同一套口径） ---------------- */
+
+/** Mifflin-St Jeor 基础代谢 */
+export const bmrOf = (p: Pick<Profile, 'sex' | 'height' | 'age'>, weightKg: number) =>
+  Math.round(10 * weightKg + 6.25 * p.height - 5 * p.age + (p.sex === 'male' ? 5 : -161))
+
+/** 日常活动（通勤、走动、做家务）按基础代谢的 30% 估算；以后可接步数替换 */
+export const NEAT_RATIO = 0.3
+
+/** 按体型类型的每日热量调整：负数为缺口，正数为盈余 */
+export const ENERGY_ADJ: Record<BodyType, number> = { build: 250, refine: -200, recomp: -250, cut: -450 }
+
+/** 预算保底：不低于基础代谢，也不低于 女 1200 / 男 1500 */
+export const kcalFloor = (p: Pick<Profile, 'sex'>, bmr: number) => Math.max(bmr, p.sex === 'male' ? 1500 : 1200)
+
+/** App 跟练的代谢当量（与 activities.ts 中 guided 一致） */
+const GUIDED_MET = 5
+
 export interface Assessment {
   bmi: number
   bodyFat: number
@@ -93,10 +111,10 @@ export function assess(p: Profile): Assessment {
   }
   if (p.days === 3) weeks += 2
 
-  const bmr = 10 * p.weight + 6.25 * p.height - 5 * p.age + (p.sex === 'male' ? 5 : -161)
-  const tdee = bmr * (1.375 + (p.days - 3) * 0.05)
-  const adj: Record<BodyType, number> = { build: 250, refine: -200, recomp: -250, cut: -450 }
-  const kcal = Math.round((tdee + adj[type]) / 50) * 50
+  // 参考值：按计划训练量折算的日均预算。每天的实际预算见 energy.ts（按当天真实训练动态计算）
+  const bmr = bmrOf(p, p.weight)
+  const plannedExercise = (p.days * GUIDED_MET * p.weight * (p.minutes / 60)) / 7
+  const kcal = Math.round(Math.max(kcalFloor(p, bmr), bmr * (1 + NEAT_RATIO) + plannedExercise + ENERGY_ADJ[type]) / 50) * 50
 
   const proteinPerKg: Record<BodyType, number> = { build: 1.8, refine: 1.8, recomp: 2.0, cut: 1.8 }
   const protein = Math.round((p.weight * proteinPerKg[type]) / 5) * 5

@@ -76,7 +76,7 @@ export default function Result({ profile: p, onStart, onRedo }: { profile: Profi
 
       <section className="card">
         <h3>
-          每日饮食 <small>约 {a.kcal} kcal · 蛋白质 {a.protein} g</small>
+          每日饮食 <small>日均约 {a.kcal} kcal · 蛋白质 {a.protein} g</small>
         </h3>
         <p className="note">不用称重，用手估算每餐的量：</p>
         <div className="palm-row">

@@ -1,26 +1,40 @@
-import { useMemo, useState } from 'react'
-import { streak, useAppState, type Feedback } from './lib/store'
+import { useMemo, useRef, useState } from 'react'
+import { ops, streak, uid, useAppState } from './lib/store'
+import { completedSessions, trainingOps, type Rpe, type SessionDetails } from './lib/training'
 import { assess, buildWorkout, dateKey, daysBetween, phaseOf, weekSchedule, weekdayIndex, type PlanCtx, type Profile, type Workout } from './lib/plan'
+import { runChat } from './lib/ai'
 import Welcome from './screens/Welcome'
 import Assessment from './screens/Assessment'
 import Generating from './screens/Generating'
 import Result from './screens/Result'
 import Today from './screens/Today'
-import PlanTab from './screens/PlanTab'
+import Coach from './screens/Coach'
+import Progress from './screens/Progress'
 import Me from './screens/Me'
 import Player from './screens/Player'
 import Done from './screens/Done'
+import Town from './game/Town'
 
 type Route = 'welcome' | 'assess' | 'generating' | 'result' | 'main' | 'workout' | 'done'
-type Tab = 'today' | 'plan' | 'me'
+export type Tab = 'today' | 'town' | 'coach' | 'progress' | 'me'
+
+const TABS: [Tab, string, string][] = [
+  ['today', '今日', 'M3 12l9-8 9 8M5 10v10h14V10'],
+  ['town', '小镇', 'M3 20h18M5 20V10l4-3 4 3v10M13 20v-6h6v6M16 14v-3'],
+  ['coach', '教练', 'M4 5h16v11H9l-5 4zM8 10h.01M12 10h.01M16 10h.01'],
+  ['progress', '进展', 'M4 19h16M6 15l4-5 3 3 5-7'],
+  ['me', '我的', 'M12 12a4 4 0 100-8 4 4 0 000 8zM4 21c1-4 4.5-6 8-6s7 2 8 6'],
+]
 
 export default function App() {
-  const [state, setState, reset] = useAppState()
+  const { state, setState, reset, getState } = useAppState()
   const [route, setRoute] = useState<Route>(state.profile && state.startDate ? 'main' : 'welcome')
   const [tab, setTab] = useState<Tab>('today')
   const [draft, setDraft] = useState<Profile | null>(null)
   const [active, setActive] = useState<Workout | null>(null)
-  const [lastRun, setLastRun] = useState<{ durationSec: number; kcal: number } | null>(null)
+  const [lastRun, setLastRun] = useState<{ id: string; durationSec: number; kcal: number } | null>(null)
+  const [sending, setSending] = useState(false)
+  const sendingRef = useRef(false) // 同步锁，防止连点重复发送
 
   const today = dateKey(new Date())
   const ctx = useMemo((): PlanCtx | null => {
@@ -36,31 +50,82 @@ export default function App() {
     return { p, a, dayIdx, week, phase, schedule, kind, workout }
   }, [state.profile, state.startDate, state.intensity, today])
 
+  const sendChat = async (text: string) => {
+    if (sendingRef.current || !text.trim()) return
+    sendingRef.current = true
+    setSending(true)
+    try {
+      await runChat(
+        {
+          getState,
+          apply: (op) => setState(op),
+          push: (m) => setState((s) => ({ ...s, chat: [...s.chat, m].slice(-200) })),
+          today,
+        },
+        text.trim(),
+      )
+    } catch (e) {
+      setState((s) => ({
+        ...s,
+        chat: [...s.chat, { id: uid(), role: 'assistant', content: String((e as Error).message || e), error: true, ts: Date.now() }],
+      }))
+    } finally {
+      sendingRef.current = false
+      setSending(false)
+    }
+  }
+
+  const askCoach = (text: string) => {
+    setTab('coach')
+    setRoute('main')
+    sendChat(text)
+  }
+
   const startPlan = () => {
     if (!draft) return
-    setState((s) => ({ ...s, profile: draft, startDate: today, intensity: 1 }))
+    setState((s) => ({
+      ...ops.setWeight(today, draft.weight)(s),
+      profile: draft,
+      startDate: s.startDate ?? today,
+      intensity: s.profile ? s.intensity : 1,
+    }))
     setTab('today')
     setRoute('main')
   }
 
-  const finishWorkout = (durationSec: number) => {
-    if (!active) return
+  const finishWorkout = (durationSec: number, details: SessionDetails) => {
+    if (!active || !state.profile) return
+    const id = uid()
     const kcal = Math.round((active.kcal * durationSec) / Math.max(1, active.estMin * 60))
-    setLastRun({ durationSec, kcal })
-    setState((s) => ({ ...s, logs: [...s.logs, { date: today, title: active.title, durationSec, kcal }] }))
+    setLastRun({ id, durationSec, kcal })
+    setState(
+      trainingOps.add({
+        id,
+        activityId: 'guided',
+        title: active.title,
+        facilityId: 'home',
+        source: 'guided',
+        date: today,
+        minutes: Math.max(1, Math.round(durationSec / 60)),
+        kcal,
+        details,
+        weightKg: state.profile.weight,
+      }),
+    )
     setRoute('done')
   }
 
-  const submitFeedback = (fb: Feedback) => {
+  const submitFeedback = (fb: Rpe) => {
     setState((s) => {
-      const logs = [...s.logs]
-      if (logs.length) logs[logs.length - 1] = { ...logs[logs.length - 1], feedback: fb }
       const delta = fb === 'easy' ? 0.1 : fb === 'hard' ? -0.1 : 0
-      return { ...s, logs, intensity: Math.min(1.4, Math.max(0.7, Math.round((s.intensity + delta) * 100) / 100)) }
+      const next = lastRun ? trainingOps.setRpe(lastRun.id, fb)(s) : s
+      return { ...next, intensity: Math.min(1.4, Math.max(0.7, Math.round((s.intensity + delta) * 100) / 100)) }
     })
     setActive(null)
     setRoute('main')
   }
+
+  const trainedDates = [...new Set(completedSessions(state).map((x) => x.date))]
 
   let screen: JSX.Element
   switch (route) {
@@ -93,8 +158,8 @@ export default function App() {
         <Done
           workout={active!}
           run={lastRun!}
-          streak={streak(state.logs.map((l) => l.date), today)}
-          totalDays={new Set(state.logs.map((l) => l.date)).size}
+          streak={streak(trainedDates, today)}
+          totalDays={trainedDates.length}
           onFeedback={submitFeedback}
         />
       )
@@ -104,10 +169,6 @@ export default function App() {
         screen = <Welcome onStart={() => setRoute('assess')} />
         break
       }
-      const begin = (w: Workout) => {
-        setActive(w)
-        setRoute('workout')
-      }
       screen = (
         <div className="tabs-layout">
           <div className="tab-body">
@@ -116,22 +177,33 @@ export default function App() {
                 ctx={ctx}
                 state={state}
                 today={today}
-                onStart={begin}
-                onToggleMeal={(i) =>
-                  setState((s) => {
-                    const m = [...(s.meals[today] ?? [false, false, false])]
-                    m[i] = !m[i]
-                    return { ...s, meals: { ...s.meals, [today]: m } }
-                  })
-                }
+                apply={(op) => setState(op)}
+                onStart={(w) => {
+                  setActive(w)
+                  setRoute('workout')
+                }}
+                onAsk={askCoach}
+                onOpenTown={() => setTab('town')}
               />
             )}
-            {tab === 'plan' && <PlanTab ctx={ctx} logs={state.logs} />}
+            {tab === 'town' && (
+              <Town
+                state={state}
+                today={today}
+                workout={ctx.workout}
+                apply={(op) => setState(op)}
+                onGuided={(w) => {
+                  setActive(w)
+                  setRoute('workout')
+                }}
+              />
+            )}
+            {tab === 'coach' && <Coach chat={state.chat} sending={sending} onSend={sendChat} onClear={() => setState((s) => ({ ...s, chat: [] }))} />}
+            {tab === 'progress' && <Progress ctx={ctx} state={state} today={today} />}
             {tab === 'me' && (
               <Me
-                profile={ctx.p}
-                logs={state.logs}
-                intensity={state.intensity}
+                ctx={ctx}
+                state={state}
                 onRedo={() => setRoute('assess')}
                 onReset={() => {
                   reset()
@@ -141,18 +213,13 @@ export default function App() {
             )}
           </div>
           <nav className="tabbar">
-            {(
-              [
-                ['today', '今日', 'M3 12l9-8 9 8M5 10v10h14V10'],
-                ['plan', '计划', 'M4 5h16v15H4zM4 10h16M9 3v4M15 3v4'],
-                ['me', '我的', 'M12 12a4 4 0 100-8 4 4 0 000 8zM4 21c1-4 4.5-6 8-6s7 2 8 6'],
-              ] as const
-            ).map(([k, label, d]) => (
+            {TABS.map(([k, label, d]) => (
               <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>
                 <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                   <path d={d} />
                 </svg>
                 <span>{label}</span>
+                {k === 'coach' && sending && tab !== 'coach' && <i className="tab-dot" />}
               </button>
             ))}
           </nav>
@@ -161,9 +228,5 @@ export default function App() {
     }
   }
 
-  return (
-    <div className="stage">
-      <div className="phone">{screen}</div>
-    </div>
-  )
+  return <div className="app">{screen}</div>
 }

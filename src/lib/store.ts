@@ -1,40 +1,144 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { dateKey, type Profile } from './plan'
+import { initialGame, type GameState, type TrainingSession } from './training'
 
-export type Feedback = 'easy' | 'ok' | 'hard'
+export type Source = 'app' | 'chat'
+export type Slot = 'breakfast' | 'lunch' | 'dinner' | 'snack'
 
-export interface WorkoutLog {
-  date: string
-  title: string
-  durationSec: number
-  kcal: number
-  feedback?: Feedback
+export const SLOT_LABEL: Record<Slot, string> = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐' }
+
+export interface Meal {
+  id: string
+  slot: Slot
+  text: string
+  protein?: number
+  kcal?: number
+  source: Source
+}
+
+/** 睡眠记在"醒来的那一天" */
+export interface Sleep {
+  bed: string // HH:MM
+  wake: string // HH:MM
+  quality?: 'good' | 'ok' | 'poor'
+  source: Source
+}
+
+export interface DayLog {
+  water: number // ml
+  meals: Meal[]
+  sleep?: Sleep
+  weight?: number
+  waist?: number
+  summary?: string
+}
+
+export interface ToolCall {
+  id: string
+  type: 'function'
+  function: { name: string; arguments: string }
+}
+
+/** 与 OpenAI Chat Completions 消息格式兼容，额外带 UI 字段 */
+export interface ChatMsg {
+  id: string
+  role: 'user' | 'assistant' | 'tool'
+  content: string | null
+  tool_calls?: ToolCall[]
+  tool_call_id?: string
+  /** tool 消息：展示给用户的同步标签 */
+  label?: string
+  error?: boolean
+  ts: number
 }
 
 export interface AppState {
+  v: 3
   profile: Profile | null
   startDate: string | null
   intensity: number
-  logs: WorkoutLog[]
-  /** date -> 三餐蛋白质打卡 */
-  meals: Record<string, boolean[]>
+  /** 睡、吃、水、身体数据，按日期存 */
+  days: Record<string, DayLog>
+  /** 训练记录：单独存，跨天、可进行中，详见 training.ts */
+  sessions: TrainingSession[]
+  game: GameState
+  chat: ChatMsg[]
 }
 
-const KEY = 'tmc:v1'
+/** 某一天的完整视图：日志 + 当天已完成的训练 */
+export type DayView = DayLog & { sessions: TrainingSession[] }
 
-const initial: AppState = { profile: null, startDate: null, intensity: 1, logs: [], meals: {} }
+const KEY = 'tmc:v3'
+const initial = (): AppState => ({ v: 3, profile: null, startDate: null, intensity: 1, days: {}, sessions: [], game: initialGame(), chat: [] })
 
-function load(): AppState {
-  try {
-    const raw = localStorage.getItem(KEY)
-    return raw ? { ...initial, ...JSON.parse(raw) } : initial
-  } catch {
-    return initial
+export const emptyDay = (): DayLog => ({ water: 0, meals: [] })
+const rawDay = (s: AppState, date: string): DayLog => s.days[date] ?? emptyDay()
+export const getDay = (s: AppState, date: string): DayView => ({
+  ...rawDay(s, date),
+  sessions: s.sessions.filter((x) => x.status === 'completed' && x.date === date),
+})
+export const uid = () => Math.random().toString(36).slice(2, 10)
+
+/** 旧版"一条训练 = 标题 + 分钟数"转成训练记录 */
+function legacyWorkout(date: string, w: { title: string; minutes: number; kcal?: number; feedback?: 'easy' | 'ok' | 'hard'; source?: string }): TrainingSession {
+  const endAt = new Date(date + 'T20:00:00').getTime()
+  const guided = w.source !== 'chat'
+  return {
+    id: uid(),
+    activityId: guided ? 'guided' : 'other',
+    title: guided ? undefined : w.title,
+    facilityId: guided ? 'home' : undefined,
+    source: guided ? 'guided' : 'chat',
+    status: 'completed',
+    startAt: endAt - w.minutes * 60000,
+    endAt,
+    pausedMs: 0,
+    date,
+    rpe: w.feedback,
+    kcal: w.kcal,
+    createdAt: endAt,
+    updatedAt: endAt,
   }
 }
 
+export function loadState(): AppState {
+  try {
+    const raw = localStorage.getItem(KEY)
+    if (raw) return { ...initial(), ...JSON.parse(raw) }
+
+    // 从 v2 迁移：DayLog.workouts → sessions
+    const v2 = localStorage.getItem('tmc:v2')
+    if (v2) {
+      const o = JSON.parse(v2)
+      const sessions: TrainingSession[] = []
+      const days: Record<string, DayLog> = {}
+      for (const [date, d] of Object.entries<Record<string, unknown> & { workouts?: [] }>(o.days ?? {})) {
+        const { workouts = [], ...rest } = d
+        for (const w of workouts) sessions.push(legacyWorkout(date, w))
+        days[date] = rest as unknown as DayLog
+      }
+      return { ...initial(), profile: o.profile, startDate: o.startDate, intensity: o.intensity ?? 1, days, sessions, chat: o.chat ?? [] }
+    }
+
+    // 从 v1 迁移
+    const v1 = localStorage.getItem('tmc:v1')
+    if (v1) {
+      const o = JSON.parse(v1)
+      const sessions = (o.logs ?? []).map((l: { date: string; title: string; durationSec: number; kcal?: number; feedback?: 'easy' | 'ok' | 'hard' }) =>
+        legacyWorkout(l.date, { title: l.title, minutes: Math.max(1, Math.round(l.durationSec / 60)), kcal: l.kcal, feedback: l.feedback }),
+      )
+      return { ...initial(), profile: o.profile, startDate: o.startDate, intensity: o.intensity ?? 1, sessions }
+    }
+  } catch {
+    // 数据损坏时从头开始
+  }
+  return initial()
+}
+
 export function useAppState() {
-  const [state, setState] = useState<AppState>(load)
+  const [state, setState] = useState<AppState>(loadState)
+  const ref = useRef(state)
+  ref.current = state
   useEffect(() => {
     try {
       localStorage.setItem(KEY, JSON.stringify(state))
@@ -42,8 +146,28 @@ export function useAppState() {
       // 存储不可用时仅保留在内存中
     }
   }, [state])
-  const reset = () => setState(initial)
-  return [state, setState, reset] as const
+  const reset = () => setState(initial())
+  return { state, setState, reset, getState: () => ref.current }
+}
+
+/* ---------------- 数据操作：App 界面和 AI 工具调用共用这一套（训练相关见 training.ts） ---------------- */
+
+type Op = (s: AppState) => AppState
+
+const patchDay = (date: string, fn: (d: DayLog) => DayLog): Op => (s) => ({
+  ...s,
+  days: { ...s.days, [date]: fn(rawDay(s, date)) },
+})
+
+export const ops = {
+  setWeight: (date: string, kg: number | undefined) => patchDay(date, (d) => ({ ...d, weight: kg })),
+  setWaist: (date: string, cm: number | undefined) => patchDay(date, (d) => ({ ...d, waist: cm })),
+  addWater: (date: string, ml: number) => patchDay(date, (d) => ({ ...d, water: Math.max(0, d.water + ml) })),
+  setWater: (date: string, ml: number) => patchDay(date, (d) => ({ ...d, water: Math.max(0, ml) })),
+  setSleep: (date: string, sleep: Sleep | undefined) => patchDay(date, (d) => ({ ...d, sleep })),
+  addMeal: (date: string, meal: Meal) => patchDay(date, (d) => ({ ...d, meals: [...d.meals, meal] })),
+  removeMeal: (date: string, id: string) => patchDay(date, (d) => ({ ...d, meals: d.meals.filter((m) => m.id !== id) })),
+  setSummary: (date: string, summary: string) => patchDay(date, (d) => ({ ...d, summary })),
 }
 
 export function streak(dates: string[], today: string) {
