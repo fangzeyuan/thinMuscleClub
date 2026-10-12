@@ -23,9 +23,21 @@ const COOKIE_PATH = '/api/v1/auth'
 
 const kindSchema = z.enum(['phone', 'email'])
 
-export function authRoutes(app: FastifyInstance, deps: { db: Db; env: Env; senders: Record<CodeKind, CodeSender> }) {
-  const { db, env, senders } = deps
+export interface AuthDeps {
+  db: Db
+  env: Env
+  senders: Record<CodeKind, CodeSender>
+  /** 开放的登录方式（短信签名未就绪时关闭手机号登录） */
+  methods: Record<CodeKind, boolean>
+  /** 内测白名单（已规范化）；为空 = 开放注册 */
+  allowlist: Set<string>
+}
+
+export function authRoutes(app: FastifyInstance, deps: AuthDeps) {
+  const { db, env, senders, methods, allowlist } = deps
   const isProd = env.NODE_ENV === 'production'
+  /** 开发环境 + 验证码打印到日志时，把验证码直接返回给前端自动填入（不用翻服务端日志）。生产环境不会走到这里（env.ts 禁止 console 方式） */
+  const devShowCode = (kind: CodeKind) => env.NODE_ENV === 'development' && (kind === 'phone' ? env.SMS_PROVIDER : env.EMAIL_PROVIDER) === 'console'
 
   const fail = (reply: FastifyReply, status: number, error: string, message: string, extra: object = {}) =>
     reply.status(status).send({ error, message, ...extra })
@@ -46,13 +58,25 @@ export function authRoutes(app: FastifyInstance, deps: { db: Db; env: Env; sende
 
   const readRefresh = (req: FastifyRequest) => (req.body as { refreshToken?: string } | undefined)?.refreshToken ?? req.cookies[COOKIE]
 
+  /** 内测白名单：新用户必须在名单里；已注册用户不受影响 */
+  const invited = async (kind: CodeKind, target: string) => {
+    if (!allowlist.size || allowlist.has(target)) return true
+    const [hit] = await db.select({ id: authIdentities.id }).from(authIdentities).where(and(eq(authIdentities.kind, kind), eq(authIdentities.value, target)))
+    return Boolean(hit)
+  }
+  const notInvited = (reply: FastifyReply) => fail(reply, 403, 'not_invited', '内测中，暂未开放注册。如需体验请联系开发者')
+
+  app.get('/api/v1/auth/config', async () => ({ methods, inviteOnly: allowlist.size > 0 }))
+
   /* ---------- 发送验证码 ---------- */
   app.post('/api/v1/auth/code', { config: { rateLimit: { max: 30, timeWindow: '1 hour' } } }, async (req, reply) => {
     const parsed = z.object({ kind: kindSchema, target: z.string().max(254) }).safeParse(req.body)
     if (!parsed.success) return fail(reply, 400, 'bad_request', '参数不正确')
     const { kind } = parsed.data
+    if (!methods[kind]) return fail(reply, 400, 'method_disabled', kind === 'phone' ? '手机号登录暂未开放，请使用邮箱登录' : '邮箱登录暂未开放')
     const target = normalizeTarget(kind, parsed.data.target)
     if (!target) return fail(reply, 400, 'invalid_target', kind === 'phone' ? '请输入正确的手机号' : '请输入正确的邮箱')
+    if (!(await invited(kind, target))) return notInvited(reply)
 
     const now = Date.now()
     const [{ recent, today }] = await db
@@ -80,7 +104,7 @@ export function authRoutes(app: FastifyInstance, deps: { db: Db; env: Env; sende
       req.log.error({ err: e }, 'code send failed')
       return fail(reply, 502, 'send_failed', '验证码发送失败，请稍后再试')
     }
-    return reply.send({ ok: true, cooldown: COOLDOWN_MS / 1000 })
+    return reply.send({ ok: true, cooldown: COOLDOWN_MS / 1000, ...(devShowCode(kind) ? { devCode: code } : {}) })
   })
 
   /* ---------- 校验验证码：登录或注册 ---------- */
@@ -116,6 +140,8 @@ export function authRoutes(app: FastifyInstance, deps: { db: Db; env: Env; sende
 
     const [identity] = await db.select().from(authIdentities).where(and(eq(authIdentities.kind, kind), eq(authIdentities.value, target)))
     const granted = new Set(parsed.data.consents ?? [])
+
+    if (!identity && !(await invited(kind, target))) return notInvited(reply)
 
     // 新用户必须先同意条款；此时不消耗验证码，同意后可以用同一个验证码继续
     if (!identity && REQUIRED_CONSENTS.some((c) => !granted.has(c))) {

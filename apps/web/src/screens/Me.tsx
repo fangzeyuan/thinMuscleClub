@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { checkAiConfig } from '../lib/ai'
-import { BODY_TYPE_INFO, TARGET_INFO, type PlanCtx } from '@tmc/core/plan'
+import { api } from '../lib/api'
+import { BODY_TYPE_INFO, TARGET_INFO, usesAppPlan, type PlanCtx, type TrainingMode } from '@tmc/core/plan'
 import { targets } from '@tmc/core/pillars'
 import type { AppState } from '../lib/store'
 
@@ -8,16 +9,19 @@ interface Props {
   ctx: PlanCtx
   state: AppState
   onRedo: () => void
-  onReset: () => void
+  onLogout: () => void
+  onSetMode: (mode: TrainingMode) => void
 }
 
-export default function Me({ ctx, state, onRedo, onReset }: Props) {
+export default function Me({ ctx, state, onRedo, onLogout, onSetMode }: Props) {
   const { p, a } = ctx
   const t = targets(p)
   const [confirming, setConfirming] = useState(false)
   const [cfg, setCfg] = useState<{ configured: boolean; model?: string; provider?: string } | null>(null)
+  const [account, setAccount] = useState<{ identities: { kind: string; display: string }[] } | null>(null)
   useEffect(() => {
     checkAiConfig().then(setCfg)
+    api<{ identities: { kind: string; display: string }[] }>('/me').then(setAccount, () => {})
   }, [])
 
   const summaries = Object.entries(state.days)
@@ -44,6 +48,15 @@ export default function Me({ ctx, state, onRedo, onReset }: Props) {
           <span>训练</span>
           <b>
             每周 {p.days} 次 · 每次 {p.minutes} 分钟
+          </b>
+        </div>
+        <div className="kv">
+          <span>训练计划</span>
+          <b>
+            {usesAppPlan(p) ? 'App 帮我安排' : '我有自己的训练'}
+            <button className="link inline" onClick={() => onSetMode(usesAppPlan(p) ? 'own' : 'app')}>
+              {usesAppPlan(p) ? '改为自己安排' : '改为 App 安排'}
+            </button>
           </b>
         </div>
         <div className="kv">
@@ -109,21 +122,29 @@ export default function Me({ ctx, state, onRedo, onReset }: Props) {
       </section>
 
       <section className="card">
+        <h3>账号</h3>
+        {account?.identities.map((i) => (
+          <div className="kv" key={i.kind}>
+            <span>{i.kind === 'phone' ? '手机号' : i.kind === 'email' ? '邮箱' : i.kind}</span>
+            <b>{i.display}</b>
+          </div>
+        ))}
+        <p className="note">数据保存在云端，换手机登录同一个账号即可同步。</p>
         {confirming ? (
           <div className="confirm">
-            <p>将清除所有测评、记录和聊天，确定吗？</p>
+            <p>退出后本机不再显示你的数据，重新登录即可恢复（数据保存在云端）。</p>
             <div className="row">
               <button className="btn ghost" onClick={() => setConfirming(false)}>
                 取消
               </button>
-              <button className="btn danger" onClick={onReset}>
-                清除
+              <button className="btn danger" onClick={onLogout}>
+                退出
               </button>
             </div>
           </div>
         ) : (
           <button className="link danger-text" onClick={() => setConfirming(true)}>
-            清除所有数据
+            退出登录
           </button>
         )}
       </section>

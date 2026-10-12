@@ -3,13 +3,15 @@ import rateLimit from '@fastify/rate-limit'
 import { and, eq, isNull } from 'drizzle-orm'
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify'
 import { authRoutes } from './auth/routes'
-import { consoleSender, notConfiguredSender, type CodeSender } from './auth/senders'
-import { maskTarget, type CodeKind } from './auth/targets'
+import { consoleSender, notConfiguredSender, smtpSender, type CodeSender } from './auth/senders'
+import { maskTarget, normalizeTarget, type CodeKind } from './auth/targets'
 import { verifyAccess } from './auth/tokens'
 import type { Db } from './db/client'
 import { authIdentities, consents, users } from './db/schema'
 import type { Env } from './env'
 import { aiRoutes } from './routes/ai'
+import { dataRoutes } from './routes/data'
+import { webRoutes } from './routes/web'
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -50,13 +52,22 @@ export async function buildApp({ env, db, senders, logger = true }: AppDeps) {
   })
 
   const log = (msg: string) => app.log.info(msg)
+  const smtp = { host: env.SMTP_HOST, port: env.SMTP_PORT, user: env.SMTP_USER, pass: env.SMTP_PASS, from: env.SMTP_FROM }
   authRoutes(app, {
     db,
     env,
     senders: senders ?? {
       phone: env.SMS_PROVIDER === 'console' ? consoleSender(log) : notConfiguredSender('腾讯云短信'),
-      email: env.EMAIL_PROVIDER === 'console' ? consoleSender(log) : notConfiguredSender('邮件服务'),
+      email: env.EMAIL_PROVIDER === 'console' ? consoleSender(log) : env.EMAIL_PROVIDER === 'smtp' ? await smtpSender(smtp) : notConfiguredSender('邮件服务'),
     },
+    // 腾讯云短信尚未接入：只有开发环境的控制台方式可用
+    methods: { phone: env.SMS_PROVIDER === 'console', email: env.EMAIL_PROVIDER !== 'none' },
+    allowlist: new Set(
+      env.SIGNUP_ALLOWLIST.split(/[,，\s]+/)
+        .filter(Boolean)
+        .map((x) => normalizeTarget(x.includes('@') ? 'email' : 'phone', x))
+        .filter((x): x is string => !!x),
+    ),
   })
 
   app.get('/api/v1/me', { preHandler: app.authenticate }, async (req, reply) => {
@@ -72,7 +83,9 @@ export async function buildApp({ env, db, senders, logger = true }: AppDeps) {
     }
   })
 
+  dataRoutes(app, db)
   aiRoutes(app, env)
+  if (env.WEB_DIST) await webRoutes(app, env.WEB_DIST)
 
   return app
 }

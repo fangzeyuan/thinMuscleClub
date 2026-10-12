@@ -1,4 +1,4 @@
-import { BODY_TYPE_INFO, DAY_INFO, TARGET_INFO, assess, dateKey, daysBetween, phaseOf, PHASES, weekSchedule, weekdayIndex } from './plan'
+import { BODY_TYPE_INFO, DAY_INFO, TARGET_INFO, assess, dateKey, daysBetween, phaseOf, PHASES, usesAppPlan, weekSchedule, weekdayIndex } from './plan'
 import { energyOn } from './energy'
 import { dayKcal, dayProtein, dayScore, lastNDates, sleepHours, targets, weightSeries, EXPECTATIONS, expectationIndex } from './pillars'
 import { SLOT_LABEL, getDay, ops, uid, type AppState, type Slot, type ToolCall } from './state'
@@ -173,7 +173,7 @@ export function buildSystemPrompt(s: AppState, now = new Date()): string {
 
   const dataSection = hasRecords
     ? `# 今天（${today}）的数据
-今日计划训练：${DAY_INFO[todayKind].title}
+${usesAppPlan(p) ? `今日计划训练：${DAY_INFO[todayKind].title}` : `本周已练 ${getDay(s, today).weekTrainedDays}/${p.days} 次（用户自己安排训练）`}
 ${dayLine(s, today, true)}
 
 ${yesterday >= s.startDate! ? `# 昨天（${yesterday}）\n${dayLine(s, yesterday, true)}\n\n` : ''}# 近 7 天
@@ -183,7 +183,7 @@ ${history || `用户 ${s.startDate} 开始计划，此前没有记录`}
 ${ws.length ? `近 30 天记录 ${ws.length} 次；首次 ${firstW.date} ${firstW.raw}kg，最近 ${lastW.date} ${lastW.raw}kg（7 日平均 ${lastW.avg}kg）` : '近 30 天没有体重记录'}`
     : `# App 记录
 用户刚完成测评，App 里还没有任何睡、练、吃、水的记录。这是你们的第一次对话。
-今天（${today}）按计划是：${DAY_INFO[todayKind].title}。`
+${usesAppPlan(p) ? `今天（${today}）按计划是：${DAY_INFO[todayKind].title}。` : '用户有自己的训练计划，App 不排课。'}`
 
   return `你是「薄肌俱乐部」App 里的 AI 教练，名字叫"小薄"。用户在 App 里和你聊天，你能读到 App 的实时数据，也能通过工具把信息写回 App。
 
@@ -237,7 +237,11 @@ ${ws.length ? `近 30 天记录 ${ws.length} 次；首次 ${firstW.date} ${first
 - 薄肌类型：${BODY_TYPE_INFO[a.type].name}（${BODY_TYPE_INFO[a.type].strategy}）
 - 估算体脂 ${a.bodyFat}%，目标 ${a.targetFat[0]}–${a.targetFat[1]}%；目标体重约 ${a.targetWeight}kg
 - 每日目标：睡眠 ${t.sleepH}h，蛋白质 ${t.protein}g，饮水 ${t.water}ml；热量预算按当天实际消耗动态计算（日均约 ${t.kcal}kcal），超出时不要让用户第二天少吃补回来
-- 训练计划：每周 ${p.days} 练，每次 ${p.minutes} 分钟。周一到周日：${sched.map((k) => DAY_INFO[k].title).join('、')}
+${
+    usesAppPlan(p)
+      ? `- 训练计划：每周 ${p.days} 练，每次 ${p.minutes} 分钟。周一到周日：${sched.map((k) => DAY_INFO[k].title).join('、')}`
+      : `- 训练：用户有自己的训练计划（每周约 ${p.days} 次，每次约 ${p.minutes} 分钟），App 不排课。不要主动给用户安排训练动作或课表；用户问到时再给建议。"练"的完成度按每周节奏计算，休息日不扣分。`
+  }
 - 计划进度：第 ${week}/${a.weeks} 周，${PHASES[phaseOf(week, a.weeks)].name}；累计训练 ${totalWorkouts} 次
 - 当前阶段的正常预期：${exp.title}。${exp.body}
 

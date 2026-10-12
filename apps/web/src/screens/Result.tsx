@@ -1,4 +1,4 @@
-import { BODY_TYPE_INFO, DAY_INFO, PHASES, TARGET_INFO, assess, palmGuide, weekSchedule, type Profile } from '@tmc/core/plan'
+import { BODY_TYPE_INFO, DAY_INFO, PHASES, TARGET_INFO, assess, palmGuide, usesAppPlan, weekSchedule, type Profile } from '@tmc/core/plan'
 import FatBar from './FatBar'
 
 const WD = ['一', '二', '三', '四', '五', '六', '日']
@@ -64,14 +64,18 @@ export default function Result({ profile: p, onStart, onRedo }: { profile: Profi
         <h3>
           每周节奏 <small>{p.days} 练 · 每次 {p.minutes} 分钟</small>
         </h3>
-        <div className="week-grid">
-          {sched.map((k, i) => (
-            <div key={i} className={`wg ${k === 'rest' ? 'rest' : ''}`}>
-              <span>周{WD[i]}</span>
-              <b>{k === 'rest' ? '休' : DAY_INFO[k].title.slice(0, 2)}</b>
-            </div>
-          ))}
-        </div>
+        {usesAppPlan(p) ? (
+          <div className="week-grid">
+            {sched.map((k, i) => (
+              <div key={i} className={`wg ${k === 'rest' ? 'rest' : ''}`}>
+                <span>周{WD[i]}</span>
+                <b>{k === 'rest' ? '休' : DAY_INFO[k].title.slice(0, 2)}</b>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="note">按你自己的训练计划来就好。去小镇或跟小薄说一声就能记录，"练"的完成度按每周 {p.days} 次的节奏计算，休息日不扣分。</p>
+        )}
       </section>
 
       <section className="card">

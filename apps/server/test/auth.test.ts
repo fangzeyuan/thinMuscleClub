@@ -63,6 +63,19 @@ describe('发送验证码', () => {
     expect(res.json().error).toBe('daily_limit')
   })
 
+  it('测试 / 生产环境不会把验证码返回给前端', async () => {
+    const res = await post('/api/v1/auth/code', { kind: 'phone', target: '13800000004' })
+    expect(res.json()).not.toHaveProperty('devCode')
+  })
+
+  it('开发环境 + 控制台方式：返回验证码方便登录', async () => {
+    const env = loadEnv({ NODE_ENV: 'development', DATABASE_URL: 'pglite://memory', JWT_SECRET: 'test-secret-test-secret-test-secret!!', CODE_PEPPER: 'test-pepper-123456', SMS_PROVIDER: 'console' })
+    const devApp = await buildApp({ env, db, senders: { phone, email }, logger: false })
+    const res = await devApp.inject({ method: 'POST', url: '/api/v1/auth/code', payload: { kind: 'phone', target: '13800000005' } })
+    expect(res.json().devCode).toBe(phone.last.get('phone:+8613800000005'))
+    await devApp.close()
+  })
+
   it('数据库里只存验证码哈希', async () => {
     const code = await sendCode('13800000003')
     const [row] = await db.select().from(verificationCodes).where(eq(verificationCodes.target, '+8613800000003'))

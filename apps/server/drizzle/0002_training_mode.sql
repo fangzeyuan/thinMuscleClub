@@ -1,0 +1,1 @@
+ALTER TABLE "profiles" ADD COLUMN "training_mode" text DEFAULT 'app' NOT NULL;

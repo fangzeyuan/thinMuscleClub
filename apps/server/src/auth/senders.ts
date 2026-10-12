@@ -25,3 +25,19 @@ export const notConfiguredSender = (name: string): CodeSender => ({
     throw new Error(`${name} 尚未配置`)
   },
 })
+
+/** SMTP 发信（内测阶段用 QQ 邮箱 / 163 邮箱即可） */
+export async function smtpSender(cfg: { host: string; port: number; user: string; pass: string; from: string }): Promise<CodeSender> {
+  const { createTransport } = await import('nodemailer')
+  const transport = createTransport({ host: cfg.host, port: cfg.port, secure: cfg.port === 465, auth: { user: cfg.user, pass: cfg.pass } })
+  return {
+    async send(_kind, target, code) {
+      await transport.sendMail({
+        from: cfg.from || `薄肌俱乐部 <${cfg.user}>`,
+        to: target,
+        subject: `薄肌俱乐部验证码：${code}`,
+        text: `你的登录验证码是 ${code}，10 分钟内有效。\n\n如果不是你本人操作，请忽略这封邮件。`,
+      })
+    },
+  }
+}

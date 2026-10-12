@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ACTIVITIES, FACILITIES, activitiesAt, activityById, type FacilityKind } from '@tmc/core/data/activities'
-import type { Workout } from '@tmc/core/plan'
+import { usesAppPlan, type Workout } from '@tmc/core/plan'
 import { uid, type AppState } from '../lib/store'
 import {
   STALE_MS,
@@ -336,7 +336,7 @@ export default function Town({ state, today, workout, apply, onGuided }: Props) 
             <>
               <div className="field-label">今天在这里练什么？</div>
               <div className="act-list">
-                {sheetFacility.kind === 'home' && (
+                {sheetFacility.kind === 'home' && usesAppPlan(p) && (
                   <button className="act primary" onClick={() => { setSheet(null); onGuided(workout) }}>
                     <b>App 跟练</b>
                     <span>{workout.title} · {workout.estMin} 分钟</span>

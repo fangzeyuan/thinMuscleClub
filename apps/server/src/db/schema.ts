@@ -5,10 +5,10 @@
  * - 业务数据的 id 由客户端生成（ULID），PUT 幂等写入
  * - 所有业务表都有 user_id、updated_at、deleted_at（软删除）
  * - 推算数据（经验、等级、过程分、热量账本）不入库
- * - 饮食、聊天、教练笔记的表待"吃"的模型确定后再建
+ * - 聊天、教练笔记的表 P2 再建
  */
 import { sql } from 'drizzle-orm'
-import { bigint, date, doublePrecision, index, inet, integer, jsonb, pgTable, primaryKey, text, time, timestamp, uniqueIndex } from 'drizzle-orm/pg-core'
+import { bigint, boolean, date, doublePrecision, index, inet, integer, jsonb, pgTable, primaryKey, text, time, timestamp, uniqueIndex } from 'drizzle-orm/pg-core'
 
 const ts = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' })
 const createdAt = () => ts('created_at').notNull().defaultNow()
@@ -96,6 +96,8 @@ export const profiles = pgTable('profiles', {
   equipment: text('equipment').array().notNull(),
   daysPerWeek: integer('days_per_week').notNull(),
   minutes: integer('minutes').notNull(),
+  /** app = App 安排训练计划；own = 用户有自己的训练，只记录不排课 */
+  trainingMode: text('training_mode').$type<'app' | 'own'>().notNull().default('app'),
   startDate: date('start_date').notNull(),
   intensity: doublePrecision('intensity').notNull().default(1),
   updatedAt: updatedAt(),
@@ -193,3 +195,77 @@ export const avatars = pgTable('avatars', {
   extra: jsonb('extra'),
   updatedAt: updatedAt(),
 })
+
+/* ---------------- 饮食（docs/backend-design.md 4.3b） ---------------- */
+
+/** 食物库：owner_id 为空是公共食物库，有值是用户自定义 */
+export const foods = pgTable(
+  'foods',
+  {
+    id: text('id').primaryKey(),
+    ownerId: text('owner_id').references(() => users.id),
+    name: text('name').notNull(),
+    aliases: text('aliases').array().notNull().default(sql`'{}'::text[]`),
+    category: text('category').notNull(),
+    kcal100g: doublePrecision('kcal_100g').notNull(),
+    protein100g: doublePrecision('protein_100g').notNull(),
+    carbs100g: doublePrecision('carbs_100g').notNull(),
+    fat100g: doublePrecision('fat_100g').notNull(),
+    units: jsonb('units').$type<{ unit: string; grams: number }[]>().notNull(),
+    defaultUnit: text('default_unit').notNull(),
+    verified: boolean('verified').notNull().default(false),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    deletedAt: deletedAt(),
+  },
+  (t) => [index('foods_owner').on(t.ownerId)],
+)
+
+export const meals = pgTable(
+  'meals',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id').notNull().references(() => users.id),
+    date: date('date').notNull(),
+    slot: text('slot').notNull(),
+    eatenAt: ts('eaten_at'),
+    title: text('title').notNull(),
+    kcal: integer('kcal'),
+    proteinG: doublePrecision('protein_g'),
+    carbsG: doublePrecision('carbs_g'),
+    fatG: doublePrecision('fat_g'),
+    inputMethod: text('input_method').notNull(),
+    confidence: text('confidence'),
+    photoKey: text('photo_key'),
+    source: text('source').notNull(),
+    chatMsgId: text('chat_msg_id'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    deletedAt: deletedAt(),
+  },
+  (t) => [index('meals_user_date').on(t.userId, t.date)],
+)
+
+/** 条目随整餐一起替换（属于一餐的组成部分），不单独软删除 */
+export const mealItems = pgTable(
+  'meal_items',
+  {
+    id: text('id').primaryKey(),
+    mealId: text('meal_id')
+      .notNull()
+      .references(() => meals.id, { onDelete: 'cascade' }),
+    userId: text('user_id').notNull().references(() => users.id),
+    foodId: text('food_id').references(() => foods.id),
+    name: text('name').notNull(),
+    amount: doublePrecision('amount').notNull(),
+    unit: text('unit').notNull(),
+    grams: doublePrecision('grams'),
+    kcal: integer('kcal'),
+    proteinG: doublePrecision('protein_g'),
+    carbsG: doublePrecision('carbs_g'),
+    fatG: doublePrecision('fat_g'),
+    position: integer('position').notNull(),
+    confidence: text('confidence'),
+  },
+  (t) => [index('meal_items_meal').on(t.mealId)],
+)

@@ -41,16 +41,20 @@ const EQUIPS: { k: Equip; t: string; d: string }[] = [
   { k: 'dumbbell', t: '哑铃', d: '可调节哑铃或一对轻哑铃' },
 ]
 
-const STEPS = ['sex', 'age', 'height', 'weight', 'waist', 'shape', 'targets', 'exp', 'equip', 'time'] as const
+const STEPS = ['sex', 'age', 'height', 'weight', 'waist', 'shape', 'targets', 'mode', 'exp', 'equip', 'time'] as const
+/** 自己有训练计划的用户不需要回答经验和器械（只用来排课） */
+const PLAN_ONLY: (typeof STEPS)[number][] = ['exp', 'equip']
 
 export default function Assessment({ initial, onBack, onDone }: Props) {
   const [p, setP] = useState<Profile>(initial ?? DEFAULT)
   const [i, setI] = useState(0)
-  const step = STEPS[i]
+  const own = p.trainingMode === 'own'
+  const steps = STEPS.filter((s) => !(own && PLAN_ONLY.includes(s)))
+  const step = steps[i]
   const set = <K extends keyof Profile>(k: K, v: Profile[K]) => setP((x) => ({ ...x, [k]: v }))
 
   const canNext = step !== 'targets' || p.targets.length > 0
-  const next = () => (i === STEPS.length - 1 ? onDone(p) : setI(i + 1))
+  const next = () => (i === steps.length - 1 ? onDone(p) : setI(i + 1))
   const prev = () => (i === 0 ? onBack() : setI(i - 1))
 
   let title = ''
@@ -153,6 +157,35 @@ export default function Assessment({ initial, onBack, onDone }: Props) {
         </div>
       )
       break
+    case 'mode':
+      title = '需要我们帮你安排训练吗？'
+      hint = '之后可以在"我的"页面随时切换'
+      body = (
+        <div className="opt-list">
+          {(
+            [
+              ['app', '需要，帮我安排', '按你的目标、器械和时间，每天生成跟练课程'],
+              ['own', '不需要，我有自己的训练', '只记录训练、计算热量，不推送训练计划'],
+            ] as const
+          ).map(([k, t, d]) => (
+            <button
+              key={k}
+              className={`opt row ${(p.trainingMode ?? 'app') === k ? 'on' : ''}`}
+              onClick={() =>
+                setP((x) =>
+                  k === 'own'
+                    ? { ...x, trainingMode: 'own', minutes: x.minutes < 30 ? 60 : x.minutes }
+                    : { ...x, trainingMode: 'app', days: Math.min(5, Math.max(3, x.days)), minutes: [15, 20, 30].includes(x.minutes) ? x.minutes : 20 },
+                )
+              }
+            >
+              <span className="opt-title">{t}</span>
+              <span className="opt-desc">{d}</span>
+            </button>
+          ))}
+        </div>
+      )
+      break
     case 'exp':
       title = '你的运动经验'
       body = (
@@ -193,21 +226,21 @@ export default function Assessment({ initial, onBack, onDone }: Props) {
       )
       break
     case 'time':
-      title = '你能投入多少时间？'
-      hint = '量力而行，坚持比强度更重要'
+      title = own ? '你大概每周练几次？' : '你能投入多少时间？'
+      hint = own ? '用来估算热量消耗和"练"的节奏，不会给你排课' : '量力而行，坚持比强度更重要'
       body = (
         <>
           <div className="field-label">每周训练</div>
-          <div className="seg">
-            {([3, 4, 5] as const).map((d) => (
+          <div className={`seg ${own ? 'five' : ''}`}>
+            {(own ? [2, 3, 4, 5, 6] : [3, 4, 5]).map((d) => (
               <button key={d} className={p.days === d ? 'on' : ''} onClick={() => set('days', d)}>
                 {d} 天
               </button>
             ))}
           </div>
-          <div className="field-label">每次时长</div>
-          <div className="seg">
-            {([15, 20, 30] as const).map((m) => (
+          <div className="field-label">{own ? '每次大约' : '每次时长'}</div>
+          <div className={`seg ${own ? 'four' : ''}`}>
+            {(own ? [30, 45, 60, 90] : [15, 20, 30]).map((m) => (
               <button key={m} className={p.minutes === m ? 'on' : ''} onClick={() => set('minutes', m)}>
                 {m} 分钟
               </button>
@@ -227,10 +260,10 @@ export default function Assessment({ initial, onBack, onDone }: Props) {
           </svg>
         </button>
         <div className="progress">
-          <div style={{ width: `${((i + 1) / STEPS.length) * 100}%` }} />
+          <div style={{ width: `${((i + 1) / steps.length) * 100}%` }} />
         </div>
         <span className="step-count">
-          {i + 1}/{STEPS.length}
+          {i + 1}/{steps.length}
         </span>
       </header>
 
@@ -242,7 +275,7 @@ export default function Assessment({ initial, onBack, onDone }: Props) {
 
       <div className="bottom-bar">
         <button className="btn primary block" disabled={!canNext} onClick={next}>
-          {i === STEPS.length - 1 ? '生成我的计划' : step === 'waist' && p.waist === null ? '跳过' : '下一步'}
+          {i === steps.length - 1 ? (own ? '完成' : '生成我的计划') : step === 'waist' && p.waist === null ? '跳过' : '下一步'}
         </button>
       </div>
     </div>

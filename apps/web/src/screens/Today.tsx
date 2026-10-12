@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { TAG_LABEL } from '@tmc/core/data/exercises'
-import { DAY_INFO, PHASES, dateKey, type PlanCtx, type Workout } from '@tmc/core/plan'
+import { DAY_INFO, PHASES, dateKey, usesAppPlan, type PlanCtx, type Workout } from '@tmc/core/plan'
 import { PILLARS, dayProtein, dayScore, pillarProgress, sleepHours, targets, type Pillar } from '@tmc/core/pillars'
 import { SLOT_LABEL, getDay, ops, type AppState } from '../lib/store'
 import { sessionMinutes, sessionTitle } from '@tmc/core/training'
@@ -39,6 +39,7 @@ export default function Today({ ctx, state, today, apply, onStart, onAsk, onOpen
   const protein = dayProtein(d)
   const trained = d.sessions.length > 0
   const isRest = kind === 'rest'
+  const appPlan = usesAppPlan(p)
   const fromChat = (k: Pillar) =>
     k === 'sleep' ? d.sleep?.source === 'chat' : k === 'eat' ? d.meals.some((m) => m.source === 'chat') : k === 'train' ? d.sessions.some((x) => x.source === 'chat') : false
 
@@ -56,7 +57,9 @@ export default function Today({ ctx, state, today, apply, onStart, onAsk, onOpen
 
   const pillarValue: Record<Pillar, { main: string; sub: string }> = {
     sleep: { main: hrs === null ? '记录' : `${hrs}h`, sub: `目标 ${t.sleepH}h` },
-    train: { main: trained ? '已完成' : isRest ? '休息日' : '待训练', sub: isRest && !trained ? '按计划休息也算' : DAY_INFO[kind].title },
+    train: appPlan
+      ? { main: trained ? '已完成' : isRest ? '休息日' : '待训练', sub: isRest && !trained ? '按计划休息也算' : DAY_INFO[kind].title }
+      : { main: trained ? '已完成' : pr.train ? '节奏达标' : '待训练', sub: `本周 ${d.weekTrainedDays}/${p.days} 次` },
     eat: { main: d.meals.length ? `${protein}g` : '记录', sub: `蛋白质 / ${t.protein}g` },
     water: { main: d.water ? `${(d.water / 1000).toFixed(1)}L` : '0L', sub: `目标 ${(t.water / 1000).toFixed(1)}L` },
   }
@@ -64,7 +67,7 @@ export default function Today({ ctx, state, today, apply, onStart, onAsk, onOpen
   const tapPillar = (k: Pillar) => {
     if (k === 'sleep') setSheet('sleep')
     else if (k === 'eat') setSheet('meal')
-    else if (k === 'train') setShowList(true)
+    else if (k === 'train') appPlan ? setShowList(true) : onOpenTown()
     else apply(ops.addWater(today, 250))
   }
 
@@ -153,68 +156,108 @@ export default function Today({ ctx, state, today, apply, onStart, onAsk, onOpen
         </section>
       )}
 
-      {/* 训练 */}
-      <section className="card workout-card">
-        <div className="wc-head">
-          <div>
-            <p className="eyebrow">{isRest ? '今天是休息日 · 可选加练' : '今日训练'}</p>
-            <h2>{workout.title}</h2>
-            <p className="muted">
-              {DAY_INFO[workout.kind].sub} · {workout.estMin} 分钟 · {workout.kcal} 千卡
-            </p>
-          </div>
-          {trained && <span className="chip done">已完成</span>}
-        </div>
-        <div className="week-strip mini">
-          {weekDays.map((k, i) => (
-            <div key={k} className={`ws ${k === today ? 'today' : ''} ${getDay(state, k).sessions.length ? 'done' : ''} ${schedule[i] === 'rest' ? 'rest' : ''}`}>
-              <span>{WD[i]}</span>
-              <b>{getDay(state, k).sessions.length ? '✓' : schedule[i] === 'rest' ? '·' : ''}</b>
+      {/* 训练：自己安排 → 只记录 */}
+      {!appPlan && (
+        <section className="card workout-card">
+          <div className="wc-head">
+            <div>
+              <p className="eyebrow">今日训练 · 按你自己的计划</p>
+              <h2>{trained ? '今天已经练过了' : '今天练了吗？'}</h2>
+              <p className="muted">
+                本周已练 {d.weekTrainedDays}/{p.days} 次{pr.train && !trained ? '，节奏达标，休息也没关系' : ''}
+              </p>
             </div>
-          ))}
-        </div>
-        {showList && (
-          <ul className="ex-list">
-            {workout.items.map((it) => (
-              <li key={it.ex.id} onClick={() => setOpen(open === it.ex.id ? null : it.ex.id)}>
-                <ExGlyph tag={it.ex.tags[0]} size={40} />
-                <div className="ex-main">
-                  <b>{it.ex.name}</b>
-                  <span>{it.ex.tags.slice(0, 2).map((x) => TAG_LABEL[x]).join(' · ')}</span>
-                  {open === it.ex.id && (
-                    <ul className="cues">
-                      {it.ex.cues.map((c) => (
-                        <li key={c}>{c}</li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-                <em>{amountText(it)}</em>
-              </li>
+            {trained && <span className="chip done">已完成</span>}
+          </div>
+          <div className="week-strip mini">
+            {weekDays.map((k, i) => (
+              <div key={k} className={`ws ${k === today ? 'today' : ''} ${getDay(state, k).sessions.length ? 'done' : ''}`}>
+                <span>{WD[i]}</span>
+                <b>{getDay(state, k).sessions.length ? '✓' : ''}</b>
+              </div>
             ))}
-          </ul>
-        )}
-        <div className="row-btns">
-          <button className="btn ghost" onClick={() => setShowList(!showList)}>
-            {showList ? '收起' : `${workout.items.length} 个动作 × ${workout.rounds} 轮`}
+          </div>
+          {d.sessions.length > 0 ? (
+            <ul className="mini-log">
+              {d.sessions.map((x) => (
+                <li key={x.id}>
+                  {sessionTitle(x)} · {sessionMinutes(x)} 分钟{x.source === 'chat' && <span className="ai-tag">AI</span>}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted small top8">练完去小镇记一笔，或者直接告诉小薄"今天练了胸，60 分钟"。</p>
+          )}
+          <button className="btn primary block top12" onClick={onOpenTown}>
+            去小镇记录训练
           </button>
-          <button className={`btn ${isRest && !trained ? 'ghost' : 'primary'}`} onClick={() => onStart(workout)}>
-            {trained ? '再练一次' : isRest ? '加练' : '开始训练'}
-          </button>
-        </div>
-        <button className="link town-link" onClick={onOpenTown}>
-          游泳、跑步、健身房？去小镇记录 →
-        </button>
-        {d.sessions.length > 0 && (
-          <ul className="mini-log">
-            {d.sessions.map((x) => (
-              <li key={x.id}>
-                {sessionTitle(x)} · {sessionMinutes(x)} 分钟{x.source === 'chat' && <span className="ai-tag">AI</span>}
-              </li>
+        </section>
+      )}
+
+      {/* 训练：App 排课 */}
+      {appPlan && (
+        <section className="card workout-card">
+          <div className="wc-head">
+            <div>
+              <p className="eyebrow">{isRest ? '今天是休息日 · 可选加练' : '今日训练'}</p>
+              <h2>{workout.title}</h2>
+              <p className="muted">
+                {DAY_INFO[workout.kind].sub} · {workout.estMin} 分钟 · {workout.kcal} 千卡
+              </p>
+            </div>
+            {trained && <span className="chip done">已完成</span>}
+          </div>
+          <div className="week-strip mini">
+            {weekDays.map((k, i) => (
+              <div key={k} className={`ws ${k === today ? 'today' : ''} ${getDay(state, k).sessions.length ? 'done' : ''} ${schedule[i] === 'rest' ? 'rest' : ''}`}>
+                <span>{WD[i]}</span>
+                <b>{getDay(state, k).sessions.length ? '✓' : schedule[i] === 'rest' ? '·' : ''}</b>
+              </div>
             ))}
-          </ul>
-        )}
-      </section>
+          </div>
+          {showList && (
+            <ul className="ex-list">
+              {workout.items.map((it) => (
+                <li key={it.ex.id} onClick={() => setOpen(open === it.ex.id ? null : it.ex.id)}>
+                  <ExGlyph tag={it.ex.tags[0]} size={40} />
+                  <div className="ex-main">
+                    <b>{it.ex.name}</b>
+                    <span>{it.ex.tags.slice(0, 2).map((x) => TAG_LABEL[x]).join(' · ')}</span>
+                    {open === it.ex.id && (
+                      <ul className="cues">
+                        {it.ex.cues.map((c) => (
+                          <li key={c}>{c}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  <em>{amountText(it)}</em>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="row-btns">
+            <button className="btn ghost" onClick={() => setShowList(!showList)}>
+              {showList ? '收起' : `${workout.items.length} 个动作 × ${workout.rounds} 轮`}
+            </button>
+            <button className={`btn ${isRest && !trained ? 'ghost' : 'primary'}`} onClick={() => onStart(workout)}>
+              {trained ? '再练一次' : isRest ? '加练' : '开始训练'}
+            </button>
+          </div>
+          <button className="link town-link" onClick={onOpenTown}>
+            游泳、跑步、健身房？去小镇记录 →
+          </button>
+          {d.sessions.length > 0 && (
+            <ul className="mini-log">
+              {d.sessions.map((x) => (
+                <li key={x.id}>
+                  {sessionTitle(x)} · {sessionMinutes(x)} 分钟{x.source === 'chat' && <span className="ai-tag">AI</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       {/* 饮食 */}
       <section className="card">

@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { DAY_INFO, type PlanCtx } from '@tmc/core/plan'
+import { DAY_INFO, dateKey, usesAppPlan, type PlanCtx } from '@tmc/core/plan'
 import { EXPECTATIONS, PILLARS, dayProtein, dayScore, expectationIndex, lastNDates, pillarProgress, sleepHours, targets, weightSeries } from '@tmc/core/pillars'
-import { getDay, type AppState } from '../lib/store'
-import { completedSessions, sessionMinutes } from '@tmc/core/training'
+import { getDay, mondayOf, type AppState } from '../lib/store'
+import { completedSessions, sessionMinutes, sessionTitle } from '@tmc/core/training'
 
 const WD = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
 
@@ -99,20 +99,43 @@ export default function Progress({ ctx, state, today }: { ctx: PlanCtx; state: A
         <p className="note calm">浅色点是每天的体重，绿线是 7 日平均。只要绿线的大方向对，单日的起伏都不用在意。</p>
       </section>
 
-      <section className="card">
-        <h3>本周训练安排</h3>
-        <ul className="sched">
-          {schedule.map((k, i) => (
-            <li key={i} className={`${i === (new Date().getDay() + 6) % 7 ? 'today' : ''} ${k === 'rest' ? 'rest' : ''}`}>
-              <span className="sched-day">{WD[i]}</span>
-              <div>
-                <b>{DAY_INFO[k].title}</b>
-                <span>{DAY_INFO[k].sub}</span>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </section>
+      {!usesAppPlan(p) ? (
+        <section className="card">
+          <h3>
+            本周训练 <small>{getDay(state, today).weekTrainedDays}/{p.days} 次</small>
+          </h3>
+          <ul className="sched">
+            {WD.map((label, i) => {
+              const date = dateKey(new Date(Date.parse(mondayOf(today) + 'T00:00:00') + i * 86400000))
+              const list = getDay(state, date).sessions
+              return (
+                <li key={i} className={`${date === today ? 'today' : ''} ${list.length ? '' : 'rest'}`}>
+                  <span className="sched-day">{label}</span>
+                  <div>
+                    <b>{list.length ? list.map(sessionTitle).join('、') : date > today ? '' : '没有训练'}</b>
+                    <span>{list.length ? `${list.reduce((n, x) => n + sessionMinutes(x), 0)} 分钟` : ''}</span>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        </section>
+      ) : (
+        <section className="card">
+          <h3>本周训练安排</h3>
+          <ul className="sched">
+            {schedule.map((k, i) => (
+              <li key={i} className={`${i === (new Date().getDay() + 6) % 7 ? 'today' : ''} ${k === 'rest' ? 'rest' : ''}`}>
+                <span className="sched-day">{WD[i]}</span>
+                <div>
+                  <b>{DAY_INFO[k].title}</b>
+                  <span>{DAY_INFO[k].sub}</span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </div>
   )
 }

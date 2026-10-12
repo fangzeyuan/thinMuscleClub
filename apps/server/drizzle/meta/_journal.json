@@ -8,6 +8,20 @@
       "when": 1791698300641,
       "tag": "0000_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791699202859,
+      "tag": "0001_meals",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791701208137,
+      "tag": "0002_training_mode",
+      "breakpoints": true
     }
   ]
 }

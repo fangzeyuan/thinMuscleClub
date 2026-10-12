@@ -1,5 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
-import { ops, streak, uid, useAppState } from './lib/store'
+import { ops, streak, uid } from './lib/store'
+import { useServerState } from './lib/useServerState'
+import Login from './screens/Login'
 import { completedSessions, trainingOps, type Rpe, type SessionDetails } from '@tmc/core/training'
 import { assess, buildWorkout, dateKey, daysBetween, phaseOf, weekSchedule, weekdayIndex, type PlanCtx, type Profile, type Workout } from '@tmc/core/plan'
 import { runChat } from './lib/ai'
@@ -27,7 +29,27 @@ const TABS: [Tab, string, string][] = [
 ]
 
 export default function App() {
-  const { state, setState, reset, getState } = useAppState()
+  const srv = useServerState()
+  if (srv.phase === 'checking' || srv.phase === 'loading')
+    return (
+      <div className="app">
+        <div className="splash">
+          <span className="brand-mark" />
+          <p>正在同步你的数据…</p>
+        </div>
+      </div>
+    )
+  if (srv.phase === 'login')
+    return (
+      <div className="app">
+        <Login onDone={srv.afterLogin} />
+      </div>
+    )
+  return <MainApp srv={srv} />
+}
+
+function MainApp({ srv }: { srv: ReturnType<typeof useServerState> }) {
+  const { state, setState, getState } = srv
   const [route, setRoute] = useState<Route>(state.profile && state.startDate ? 'main' : 'welcome')
   const [tab, setTab] = useState<Tab>('today')
   const [draft, setDraft] = useState<Profile | null>(null)
@@ -103,7 +125,7 @@ export default function App() {
         id,
         activityId: 'guided',
         title: active.title,
-        facilityId: 'home',
+        facilityId: state.game.facilities.find((f) => f.kind === 'home')?.id,
         source: 'guided',
         date: today,
         minutes: Math.max(1, Math.round(durationSec / 60)),
@@ -205,10 +227,21 @@ export default function App() {
                 ctx={ctx}
                 state={state}
                 onRedo={() => setRoute('assess')}
-                onReset={() => {
-                  reset()
-                  setRoute('welcome')
-                }}
+                onLogout={srv.logout}
+                onSetMode={(mode) =>
+                  setState((s) =>
+                    s.profile
+                      ? {
+                          ...s,
+                          profile:
+                            mode === 'own'
+                              ? { ...s.profile, trainingMode: 'own' }
+                              : // 改回 App 排课：天数和时长收敛到排课支持的选项
+                                { ...s.profile, trainingMode: 'app', days: Math.min(5, Math.max(3, s.profile.days)), minutes: s.profile.minutes <= 15 ? 15 : s.profile.minutes <= 20 ? 20 : 30 },
+                        }
+                      : s,
+                  )
+                }
               />
             )}
           </div>
@@ -228,5 +261,15 @@ export default function App() {
     }
   }
 
-  return <div className="app">{screen}</div>
+  return (
+    <div className="app">
+      {(srv.offline || srv.notice) && (
+        <div className={`sync-banner ${srv.notice ? 'warn' : ''}`} onClick={srv.clearNotice}>
+          {srv.notice ?? (srv.pendingCount ? `离线中 · ${srv.pendingCount} 条训练记录会在联网后自动上传` : '离线中 · 训练计时照常可用')}
+          {srv.notice && <span className="x">×</span>}
+        </div>
+      )}
+      {screen}
+    </div>
+  )
 }

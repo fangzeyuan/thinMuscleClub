@@ -17,9 +17,19 @@ const schema = z.object({
   JWT_SECRET: z.string().min(32, 'JWT_SECRET 至少 32 个字符'),
   /** 验证码哈希用的密钥（防止数据库泄露后被暴力还原） */
   CODE_PEPPER: z.string().min(16),
-  /** console = 验证码打印在服务端日志（开发 / 内测） */
-  SMS_PROVIDER: z.enum(['console', 'tencent']).default('console'),
-  EMAIL_PROVIDER: z.enum(['console', 'smtp']).default('console'),
+  /** console = 验证码打印在服务端日志（仅开发）；none = 关闭这种登录方式 */
+  SMS_PROVIDER: z.enum(['console', 'tencent', 'none']).default('console'),
+  EMAIL_PROVIDER: z.enum(['console', 'smtp', 'none']).default('console'),
+  /** SMTP 发信（如 QQ 邮箱：smtp.qq.com / 465 / 邮箱地址 / 授权码） */
+  SMTP_HOST: z.string().default(''),
+  SMTP_PORT: z.coerce.number().default(465),
+  SMTP_USER: z.string().default(''),
+  SMTP_PASS: z.string().default(''),
+  SMTP_FROM: z.string().default(''),
+  /** 内测白名单：逗号分隔的邮箱 / 手机号。为空 = 开放注册。已注册的账号不受影响 */
+  SIGNUP_ALLOWLIST: z.string().default(''),
+  /** 网页构建产物目录（生产环境由服务端直接提供网页）；为空则不提供 */
+  WEB_DIST: z.string().default(''),
   LLM_BASE_URL: z.string().default('https://dashscope.aliyuncs.com/compatible-mode/v1'),
   LLM_API_KEY: z.string().default(''),
   LLM_MODEL: z.string().default('qwen-plus'),
@@ -32,6 +42,8 @@ export function loadEnv(overrides: Partial<Record<keyof Env, unknown>> = {}): En
   if (env.NODE_ENV === 'production') {
     if (env.DATABASE_URL.startsWith('pglite')) throw new Error('生产环境必须使用 PostgreSQL')
     if (env.SMS_PROVIDER === 'console' || env.EMAIL_PROVIDER === 'console') throw new Error('生产环境不能把验证码打印到日志')
+    if (env.EMAIL_PROVIDER === 'smtp' && (!env.SMTP_HOST || !env.SMTP_USER || !env.SMTP_PASS)) throw new Error('EMAIL_PROVIDER=smtp 需要配置 SMTP_HOST / SMTP_USER / SMTP_PASS')
+    if (env.SMS_PROVIDER === 'none' && env.EMAIL_PROVIDER === 'none') throw new Error('至少要开启一种登录方式')
   }
   return env
 }

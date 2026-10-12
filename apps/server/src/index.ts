@@ -1,9 +1,11 @@
 import { buildApp } from './app'
 import { openDb } from './db/client'
+import { seedFoods } from './db/seed'
 import { loadEnv } from './env'
 
 const env = loadEnv()
 const { db, close } = await openDb(env.DATABASE_URL)
+await seedFoods(db)
 const app = await buildApp({ env, db })
 
 const shutdown = async () => {

@@ -1,0 +1,6 @@
+# DOMAIN 来自 deploy/.env，例如 43.128.10.20.sslip.io 或你自己的域名
+# Caddy 会自动申请并续期 Let's Encrypt 证书
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy app:8787
+}

@@ -6,6 +6,7 @@
  * 游戏状态都会自动一致；删除一条记录，游戏状态也会随之回退。
  */
 import { activityById, type ActivityCategory, type FacilityKind } from './data/activities'
+import { uid } from './id'
 import { dateKey } from './plan'
 import type { AppState, Source } from './state'
 
@@ -55,7 +56,7 @@ export interface GameState {
 }
 
 export const initialGame = (): GameState => ({
-  facilities: [{ id: 'home', kind: 'home', pos: { x: 3, y: 3 }, createdAt: Date.now() }],
+  facilities: [{ id: uid(), kind: 'home', pos: { x: 3, y: 3 }, createdAt: Date.now() }],
   avatar: { skin: 'default', outfit: 'default' },
 })
 

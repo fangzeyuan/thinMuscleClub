@@ -1,4 +1,4 @@
-import { assess, dateKey, weekSchedule, weekdayIndex, type Profile } from './plan'
+import { assess, dateKey, usesAppPlan, weekSchedule, weekdayIndex, type Profile } from './plan'
 import { getDay, type AppState, type DayLog, type DayView, type Sleep } from './state'
 
 export type Pillar = 'sleep' | 'train' | 'eat' | 'water'
@@ -36,14 +36,27 @@ export const dayKcal = (d: DayLog) => d.meals.reduce((a, m) => a + (m.kcal ?? 0)
 
 export const isTrainingDay = (p: Profile, date: string) => weekSchedule(p)[weekdayIndex(new Date(date + 'T00:00:00'))] !== 'rest'
 
+/**
+ * "练"的完成度：
+ * - App 排课：训练日练了 = 1；休息日按计划休息也算 1
+ * - 自己安排：没有课表，按本周节奏算。比如每周 4 次，截至周一 / 三 / 五 / 日分别应练 0 / 1 / 2 / 4 次（向下取整，宽松一些）；
+ *   今天练了，或本周已经跟上节奏（休息不扣分）= 1，落后 = 0。
+ *   本周中途开始计划的，从开始那天算起（周日注册不会被要求"本周已练 4 次"）
+ */
+export function trainProgress(p: Profile, d: DayView, date: string) {
+  if (d.sessions.length > 0) return 1
+  if (usesAppPlan(p)) return isTrainingDay(p, date) ? 0 : 1
+  const expected = Math.floor((p.days * d.weekElapsedDays) / 7)
+  return d.weekTrainedDays >= expected ? 1 : 0
+}
+
 /** 各支柱完成度 0–1。只衡量“可控的过程”，不看体重。 */
 export function pillarProgress(p: Profile, d: DayView, date: string): Record<Pillar, number | null> {
   const t = targets(p)
   const h = sleepHours(d.sleep)
-  const trained = d.sessions.length > 0
   return {
     sleep: h === null ? null : Math.min(1, h / t.sleepH),
-    train: trained ? 1 : isTrainingDay(p, date) ? 0 : 1, // 休息日按计划休息 = 完成
+    train: trainProgress(p, d, date),
     eat: d.meals.length === 0 ? null : Math.min(1, dayProtein(d) / t.protein),
     water: d.water === 0 ? null : Math.min(1, d.water / t.water),
   }

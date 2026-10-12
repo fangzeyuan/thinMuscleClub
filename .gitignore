@@ -5,3 +5,5 @@ dist
 *.tsbuildinfo
 .data
 **/dist
+deploy/.env
+deploy/backups

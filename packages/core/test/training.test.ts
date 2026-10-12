@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { executeTool } from '../src/ai'
-import { dayScore } from '../src/pillars'
+import { dayScore, trainProgress } from '../src/pillars'
 import type { Profile } from '../src/plan'
 import { getDay, initialState, migrateLegacy, uid, type AppState } from '../src/state'
 import { activeSession, attributes, avatarStage, facilityLevel, levelOf, sessionMinutes, totalXp, trainingOps } from '../src/training'
@@ -112,11 +112,47 @@ describe('旧数据迁移', () => {
     expect(m.v).toBe(3)
     expect(m.sessions).toHaveLength(2)
     const g = m.sessions.find((x) => x.date === '2026-10-05')!
-    expect(g).toMatchObject({ activityId: 'guided', facilityId: 'home', rpe: 'easy' })
+    expect(g).toMatchObject({ activityId: 'guided', facilityId: m.game.facilities[0].id, rpe: 'easy' })
     expect(sessionMinutes(g)).toBe(18)
     expect(m.sessions.find((x) => x.date === '2026-10-06')).toMatchObject({ activityId: 'other', title: '夜跑', source: 'chat' })
     expect(m.days['2026-10-05']).not.toHaveProperty('workouts')
     expect(m).toMatchObject({ intensity: 1.1 })
     expect(m.game.facilities[0].kind).toBe('home')
+  })
+})
+
+describe('自己安排训练：按本周节奏计算"练"', () => {
+  const own: Profile = { ...profile, trainingMode: 'own', days: 4, minutes: 60 }
+  const s = (dates: string[]) => {
+    let st: AppState = { ...initialState(), profile: own, startDate: '2026-09-01' }
+    for (const d of dates) st = trainingOps.add({ id: d, activityId: 'gym_strength', source: 'manual', date: d, minutes: 60, weightKg: 56 })(st)
+    return st
+  }
+  // 2026-10-12 是周一
+  it('周一没练不扣分（应练 0 次）', () => {
+    expect(trainProgress(own, getDay(s([]), '2026-10-12'), '2026-10-12')).toBe(1)
+  })
+  it('周三还一次没练：落后，0', () => {
+    expect(trainProgress(own, getDay(s([]), '2026-10-14'), '2026-10-14')).toBe(0)
+  })
+  it('周一练过一次，周三休息：节奏达标，1', () => {
+    expect(trainProgress(own, getDay(s(['2026-10-12']), '2026-10-14'), '2026-10-14')).toBe(1)
+  })
+  it('上周的训练不算进本周', () => {
+    expect(getDay(s(['2026-10-09', '2026-10-10']), '2026-10-14').weekTrainedDays).toBe(0)
+  })
+  it('App 排课的用户不受影响：休息日 = 1，训练日没练 = 0', () => {
+    expect(trainProgress(profile, getDay(s([]), '2026-10-14'), '2026-10-14')).toBe(1) // 周三休息
+    expect(trainProgress(profile, getDay(s([]), '2026-10-13'), '2026-10-13')).toBe(0) // 周二训练日
+  })
+})
+
+describe('自己安排训练：本周中途开始计划', () => {
+  it('周日注册，当天没练不算落后', () => {
+    const own: Profile = { ...profile, trainingMode: 'own', days: 5, minutes: 60 }
+    const st: AppState = { ...initialState(), profile: own, startDate: '2026-10-11' } // 周日
+    const d = getDay(st, '2026-10-11')
+    expect(d.weekElapsedDays).toBe(1)
+    expect(trainProgress(own, d, '2026-10-11')).toBe(1) // floor(5 × 1/7) = 0
   })
 })

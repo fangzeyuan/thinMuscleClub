@@ -5,6 +5,11 @@ export type Shape = 'skinny' | 'even' | 'soft' | 'heavy'
 export type Target = 'abs' | 'shoulder' | 'arm' | 'glute' | 'chest' | 'posture'
 export type Exp = 1 | 2 | 3
 
+export type TrainingMode = 'app' | 'own'
+
+/** 是否由 App 安排训练计划（自己有训练计划的用户不展示课表和跟练） */
+export const usesAppPlan = (p: Pick<Profile, 'trainingMode'>) => p.trainingMode !== 'own'
+
 export interface Profile {
   sex: Sex
   age: number
@@ -15,8 +20,12 @@ export interface Profile {
   targets: Target[]
   exp: Exp
   equip: Equip[]
-  days: 3 | 4 | 5
-  minutes: 15 | 20 | 30
+  /** 每周训练天数（App 排课时为 3–5；自己安排时 1–7） */
+  days: number
+  /** 每次训练分钟数（App 排课时为 15/20/30；自己安排时可以更长） */
+  minutes: number
+  /** app = App 安排训练计划；own = 用户有自己的训练，只记录不排课。缺省视为 app */
+  trainingMode?: TrainingMode
 }
 
 export type BodyType = 'build' | 'refine' | 'recomp' | 'cut'
@@ -109,7 +118,7 @@ export function assess(p: Profile): Assessment {
     case 'recomp': weeks = clamp(Math.ceil(fatToLose / 0.35) + 4, 10, 20); break
     case 'cut': weeks = clamp(Math.ceil(fatToLose / 0.5) + 2, 12, 24); break
   }
-  if (p.days === 3) weeks += 2
+  if (p.days <= 3) weeks += 2
 
   // 参考值：按计划训练量折算的日均预算。每天的实际预算见 energy.ts（按当天真实训练动态计算）
   const bmr = bmrOf(p, p.weight)
@@ -167,7 +176,7 @@ const WEEK_TEMPLATES: Record<3 | 4 | 5, Partial<Record<number, DayKind>>> = {
 }
 
 export function weekSchedule(p: Profile): DayKind[] {
-  const t = WEEK_TEMPLATES[p.days]
+  const t = WEEK_TEMPLATES[Math.min(5, Math.max(3, p.days)) as 3 | 4 | 5]
   return Array.from({ length: 7 }, (_, i) => t[i] ?? 'rest')
 }
 
@@ -231,7 +240,8 @@ export function buildWorkout(p: Profile, kind: DayKind, seed: number, phase: num
     return s + rand() * 1.6
   }
 
-  const n = { 15: 4, 20: 5, 30: 6 }[p.minutes]
+  const bucket = p.minutes <= 15 ? 15 : p.minutes <= 20 ? 20 : 30
+  const n = { 15: 4, 20: 5, 30: 6 }[bucket]
   const scored = pool.map((e) => ({ e, s: score(e) })).filter((x) => x.s > -Infinity)
   const picked: Exercise[] = []
   const primaryCount: Partial<Record<Tag, number>> = {}

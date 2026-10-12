@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
 import { initialState, migrateLegacy, type AppState } from '@tmc/core/state'
 
 export * from '@tmc/core/state'
 
 const KEY = 'tmc:v3'
 
+/** 读取登录前保存在本机的旧数据（第 6 步：首次登录后导入到账号） */
 export function loadState(): AppState {
   try {
     const raw = localStorage.getItem(KEY)
@@ -14,19 +14,4 @@ export function loadState(): AppState {
     // 数据损坏时从头开始
     return initialState()
   }
-}
-
-export function useAppState() {
-  const [state, setState] = useState<AppState>(loadState)
-  const ref = useRef(state)
-  ref.current = state
-  useEffect(() => {
-    try {
-      localStorage.setItem(KEY, JSON.stringify(state))
-    } catch {
-      // 存储不可用时仅保留在内存中
-    }
-  }, [state])
-  const reset = () => setState(initialState())
-  return { state, setState, reset, getState: () => ref.current }
 }
