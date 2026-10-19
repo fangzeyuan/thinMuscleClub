@@ -1,13 +1,12 @@
 import { useState } from 'react'
 import { TAG_LABEL } from '@tmc/core/data/exercises'
-import { DAY_INFO, PHASES, dateKey, usesAppPlan, type PlanCtx, type Workout } from '@tmc/core/plan'
-import { PILLARS, dayProtein, dayScore, pillarProgress, sleepHours, targets, type Pillar } from '@tmc/core/pillars'
+import { DAY_INFO, PHASES, dateKey, daysBetween, usesAppPlan, type PlanCtx, type Workout } from '@tmc/core/plan'
+import { PILLARS, dayProtein, dayScore, lastNDates, pillarProgress, sleepHours, targets, weightSeries, type Pillar } from '@tmc/core/pillars'
 import { SLOT_LABEL, getDay, ops, type AppState } from '../lib/store'
 import { sessionMinutes, sessionTitle } from '@tmc/core/training'
 import ExGlyph from './ExGlyph'
 import EnergyCard from './EnergyCard'
 import { energyOn, recentBalance } from '@tmc/core/energy'
-import { lastNDates } from '@tmc/core/pillars'
 import { BodySheet, MealSheet, SleepSheet } from './Sheets'
 
 interface Props {
@@ -89,6 +88,9 @@ export default function Today({ ctx, state, today, apply, onStart, onAsk, onOpen
         onAddMeal={() => setSheet('meal')}
         onAsk={onAsk}
       />
+
+      {/* 当前体重：最近一次记录 + 7 日平均 + 较开始 */}
+      <WeightCard state={state} today={today} startWeight={p.weight} onRecord={() => setSheet('body')} />
 
       {/* 过程分：只衡量可控的四件事 */}
       <section className="card score-card">
@@ -290,16 +292,6 @@ export default function Today({ ctx, state, today, apply, onStart, onAsk, onOpen
         </button>
       </section>
 
-      {/* 身体数据 */}
-      <button className="card body-row" onClick={() => setSheet('body')}>
-        <div>
-          <p className="eyebrow">今日体重</p>
-          <b>{d.weight != null ? `${d.weight} kg` : '未记录'}</b>
-          {d.waist != null && <span className="muted small"> · 腰围 {d.waist} cm</span>}
-        </div>
-        <span className="muted small">记录 →</span>
-      </button>
-
       {sheet === 'sleep' && (
         <SleepSheet
           value={d.sleep}
@@ -364,5 +356,45 @@ function ScoreRing({ score, parts }: { score: number; parts: { color: string; v:
       </svg>
       <b>{score}</b>
     </div>
+  )
+}
+
+/** 当前体重卡片。只展示事实，不用红绿色评价涨跌（单日波动很正常，看 7 日平均） */
+function WeightCard({ state, today, startWeight, onRecord }: { state: AppState; today: string; startWeight: number; onRecord: () => void }) {
+  const last = Object.keys(state.days)
+    .filter((k) => k <= today && state.days[k].weight != null)
+    .sort()
+    .at(-1)
+  const current = last ? state.days[last].weight! : startWeight
+  const avg = weightSeries(state, [today])[0].avg
+  const delta = Math.round((current - startWeight) * 10) / 10
+  const ago = last ? daysBetween(last, today) : null
+  const when = ago === 0 ? '今天' : ago === 1 ? '昨天' : ago != null ? `${ago} 天前` : '测评时'
+  const waist = last ? state.days[last].waist : undefined
+
+  return (
+    <button className="card weight-card" onClick={onRecord}>
+      <div className="wc-main">
+        <span className="eyebrow">当前体重 · {when}</span>
+        <b>
+          {current.toFixed(1)}
+          <small> kg</small>
+        </b>
+        <span className="wc-cta">
+          {ago === 0 ? '修改今日体重' : '记录今日体重'}
+          {waist != null && <span className="muted"> · 腰围 {waist} cm</span>}
+        </span>
+      </div>
+      <div className="wc-side">
+        <div>
+          <span>7 日平均</span>
+          <b>{avg != null ? avg.toFixed(1) : '-'}</b>
+        </div>
+        <div>
+          <span>较开始</span>
+          <b>{delta === 0 ? '±0' : delta > 0 ? `+${delta.toFixed(1)}` : delta.toFixed(1)}</b>
+        </div>
+      </div>
+    </button>
   )
 }

@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { checkAiConfig } from '../lib/ai'
 import type { ChatMsg } from '../lib/store'
+import { chatTime, needsTimeDivider } from '../lib/time'
 
 interface Props {
   chat: ChatMsg[]
@@ -15,6 +16,22 @@ export default function Coach({ chat, sending, onSend, onClear }: Props) {
   const [text, setText] = useState('')
   const [cfg, setCfg] = useState<{ configured: boolean; model?: string; provider?: string } | null>(null)
   const endRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  // 输入框随内容自动撑高（最多约 5 行，超出后框内滚动）
+  useLayoutEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    if (!text) {
+      // 空的时候保持一行高（不让占位文字撑高）
+      el.style.height = ''
+      el.style.overflowY = 'hidden'
+      return
+    }
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 132)}px`
+    el.style.overflowY = el.scrollHeight > 132 ? 'auto' : 'hidden'
+  }, [text])
 
   useEffect(() => {
     checkAiConfig().then(setCfg)
@@ -30,17 +47,25 @@ export default function Coach({ chat, sending, onSend, onClear }: Props) {
   }
 
   // 把连续的 tool 消息合并成一组同步标签
-  const items: ({ kind: 'msg'; m: ChatMsg } | { kind: 'sync'; id: string; labels: string[] })[] = []
+  const items: ({ kind: 'msg'; m: ChatMsg; ts: number } | { kind: 'sync'; id: string; labels: string[]; ts: number })[] = []
   for (const m of chat) {
     if (m.role === 'tool') {
       if (!m.label) continue
       const last = items[items.length - 1]
       if (last?.kind === 'sync') last.labels.push(m.label)
-      else items.push({ kind: 'sync', id: m.id, labels: [m.label] })
+      else items.push({ kind: 'sync', id: m.id, labels: [m.label], ts: m.ts })
     } else if (m.content) {
-      items.push({ kind: 'msg', m })
+      items.push({ kind: 'msg', m, ts: m.ts })
     }
   }
+  // 相隔 5 分钟以上或跨天时插入一条时间
+  const now = new Date()
+  let prevTs: number | null = null
+  const withTime = items.map((it) => {
+    const show = needsTimeDivider(prevTs, it.ts)
+    prevTs = it.ts
+    return { it, time: show ? chatTime(it.ts, now) : null }
+  })
 
   return (
     <div className="screen coach">
@@ -79,9 +104,11 @@ export default function Coach({ chat, sending, onSend, onClear }: Props) {
           </div>
         )}
 
-        {items.map((it) =>
-          it.kind === 'sync' ? (
-            <div key={it.id} className="sync-row">
+        {withTime.map(({ it, time }) => (
+          <Fragment key={it.kind === 'sync' ? it.id : it.m.id}>
+            {time && <div className="chat-time">{time}</div>}
+            {it.kind === 'sync' ? (
+            <div className="sync-row">
               {it.labels.map((l, i) => (
                 <span key={i} className="sync-chip">
                   <i>✓</i>
@@ -90,12 +117,13 @@ export default function Coach({ chat, sending, onSend, onClear }: Props) {
               ))}
             </div>
           ) : (
-            <div key={it.m.id} className={`bubble ${it.m.role} ${it.m.error ? 'error' : ''}`}>
+            <div className={`bubble ${it.m.role} ${it.m.error ? 'error' : ''}`}>
               {it.m.error && <b>出错了：</b>}
               {it.m.content}
             </div>
-          ),
-        )}
+            )}
+          </Fragment>
+        ))}
 
         {sending && (
           <div className="bubble assistant typing">
@@ -122,7 +150,21 @@ export default function Coach({ chat, sending, onSend, onClear }: Props) {
             send(text)
           }}
         >
-          <input value={text} onChange={(e) => setText(e.target.value)} placeholder="今天吃了什么、睡得怎样、有什么困惑…" enterKeyHint="send" />
+          <textarea
+            ref={inputRef}
+            rows={1}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              // 回车发送，Shift+回车换行；中文输入法选字时的回车不发送
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) {
+                e.preventDefault()
+                send(text)
+              }
+            }}
+            placeholder="吃了什么、睡得怎样…"
+            enterKeyHint="send"
+          />
           <button type="submit" className="send" disabled={!text.trim() || sending} aria-label="发送">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M5 12h14M13 6l6 6-6 6" />
