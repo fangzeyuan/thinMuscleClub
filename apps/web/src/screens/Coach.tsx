@@ -7,12 +7,13 @@ interface Props {
   chat: ChatMsg[]
   sending: boolean
   onSend: (text: string) => void
+  onRetry: (errorMsgId: string) => void
   onClear: () => void
 }
 
 const QUICK = ['帮我做今日总结', '刚喝了两杯水', '今天体重 62.3', '中午吃了黄焖鸡米饭', '练了一个月没变化，好焦虑']
 
-export default function Coach({ chat, sending, onSend, onClear }: Props) {
+export default function Coach({ chat, sending, onSend, onRetry, onClear }: Props) {
   const [text, setText] = useState('')
   const [cfg, setCfg] = useState<{ configured: boolean; model?: string; provider?: string } | null>(null)
   const endRef = useRef<HTMLDivElement>(null)
@@ -54,10 +55,12 @@ export default function Coach({ chat, sending, onSend, onClear }: Props) {
       const last = items[items.length - 1]
       if (last?.kind === 'sync') last.labels.push(m.label)
       else items.push({ kind: 'sync', id: m.id, labels: [m.label], ts: m.ts })
-    } else if (m.content) {
+    } else if (m.content || m.pending) {
       items.push({ kind: 'msg', m, ts: m.ts })
     }
   }
+  const lastId = items.at(-1)?.kind === 'msg' ? (items.at(-1) as { m: ChatMsg }).m.id : null
+  const streaming = chat.some((m) => m.pending)
   // 相隔 5 分钟以上或跨天时插入一条时间
   const now = new Date()
   let prevTs: number | null = null
@@ -117,15 +120,32 @@ export default function Coach({ chat, sending, onSend, onClear }: Props) {
               ))}
             </div>
           ) : (
-            <div className={`bubble ${it.m.role} ${it.m.error ? 'error' : ''}`}>
-              {it.m.error && <b>出错了：</b>}
-              {it.m.content}
+            <div className={`bubble ${it.m.role} ${it.m.error ? 'error' : ''} ${it.m.pending && !it.m.content ? 'typing' : ''}`}>
+              {it.m.pending && !it.m.content ? (
+                <>
+                  <i />
+                  <i />
+                  <i />
+                  {it.m.phase === 'thinking' && <span className="typing-label">思考中</span>}
+                  {it.m.phase === 'tools' && <span className="typing-label">正在记录</span>}
+                </>
+              ) : (
+                <>
+                  {it.m.content}
+                  {it.m.pending && <span className="cursor" />}
+                  {it.m.error && it.m.retryable && it.m.id === lastId && (
+                    <button className="retry" disabled={sending} onClick={() => onRetry(it.m.id)}>
+                      重试
+                    </button>
+                  )}
+                </>
+              )}
             </div>
             )}
           </Fragment>
         ))}
 
-        {sending && (
+        {sending && !streaming && (
           <div className="bubble assistant typing">
             <i />
             <i />

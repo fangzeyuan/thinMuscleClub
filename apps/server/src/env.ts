@@ -33,6 +33,8 @@ const schema = z.object({
   LLM_BASE_URL: z.string().default('https://dashscope.aliyuncs.com/compatible-mode/v1'),
   LLM_API_KEY: z.string().default(''),
   LLM_MODEL: z.string().default('qwen-plus'),
+  /** 额外请求参数（JSON），会覆盖按模型自动设置的思考档位，例如 {"reasoning_effort":"high"} */
+  LLM_EXTRA_BODY: z.string().default(''),
 })
 
 export type Env = z.infer<typeof schema>

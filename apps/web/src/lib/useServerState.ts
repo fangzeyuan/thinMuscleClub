@@ -8,7 +8,7 @@
  * - 聊天记录暂存本机（P2 移到服务端）
  */
 import { dateKey } from '@tmc/core/plan'
-import { initialState, uid, type AppState } from '@tmc/core/state'
+import { initialState, uid, type AppState, type ChatMsg } from '@tmc/core/state'
 import { diffState, fromBootstrap, type BootstrapPayload, type SyncCall } from '@tmc/core/sync'
 import { trainingOps, type TrainingSession } from '@tmc/core/training'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -36,6 +36,10 @@ const write = (key: string, value: unknown) => {
 }
 
 type Queue = Record<string, SyncCall>
+
+/** 上次关掉 App 时还在生成中的回复：标为中断、可重试 */
+const restoreChat = (chat: ChatMsg[]) =>
+  chat.map((m) => (m.pending ? { ...m, pending: false, phase: undefined, error: true, retryable: true, content: `${m.content ? `${m.content}\n\n` : ''}回复被中断了，请重试` } : m))
 
 /** 把离线队列里还没上传的训练和测评档案叠加到服务端数据上 */
 function overlayQueue(s: AppState, queue: Queue): AppState {
@@ -94,9 +98,10 @@ export function useServerState() {
       const b = await api<BootstrapPayload>(`/bootstrap?today=${dateKey(new Date())}`)
       userId.current = b.user.id
       write(LAST_USER, b.user.id)
-      const s = overlayQueue(fromBootstrap(b, read(k('chat', b.user.id), [])), queue())
-      synced.current = s
-      setState(s)
+      const s = overlayQueue(fromBootstrap(b, silent ? [] : restoreChat(read(k('chat', b.user.id), []))), queue())
+      // 后台刷新只更新数据，聊天保留内存里的（否则正在到达的回复会被覆盖掉）
+      synced.current = silent ? { ...s, chat: stateRef.current.chat } : s
+      setState((cur) => (silent ? { ...s, chat: cur.chat } : s))
       setOffline(false)
       setNotice((n) => (n?.startsWith('网络不可用') ? null : n)) // 恢复联网后清掉断网提示
       setPendingCount(Object.keys(queue()).length)

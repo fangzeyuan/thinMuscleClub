@@ -56,6 +56,12 @@ export interface ChatMsg {
   /** tool 消息：展示给用户的同步标签 */
   label?: string
   error?: boolean
+  /** 正在生成中（流式回复还没结束）；不发给模型，也不应长期留在记录里 */
+  pending?: boolean
+  /** 出错的回复可以重试（重新请求模型，不重复添加用户消息） */
+  retryable?: boolean
+  /** 生成中的阶段（仅界面显示）：等待 / 思考中 / 正在记录 */
+  phase?: 'waiting' | 'thinking' | 'tools'
   ts: number
 }
 

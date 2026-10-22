@@ -72,19 +72,22 @@ function MainApp({ srv }: { srv: ReturnType<typeof useServerState> }) {
     return { p, a, dayIdx, week, phase, schedule, kind, workout }
   }, [state.profile, state.startDate, state.intensity, today])
 
-  const sendChat = async (text: string) => {
-    if (sendingRef.current || !text.trim()) return
+  /** text 为 null 表示重试：先删掉出错的那条回复，再用已有记录重新请求 */
+  const sendChat = async (text: string | null, retryId?: string) => {
+    if (sendingRef.current || (text !== null && !text.trim())) return
     sendingRef.current = true
     setSending(true)
+    if (retryId) setState((s) => ({ ...s, chat: s.chat.filter((m) => m.id !== retryId) }))
     try {
       await runChat(
         {
           getState,
           apply: (op) => setState(op),
           push: (m) => setState((s) => ({ ...s, chat: [...s.chat, m].slice(-200) })),
+          patch: (id, p) => setState((s) => ({ ...s, chat: s.chat.map((m) => (m.id === id ? { ...m, ...p } : m)) })),
           today,
         },
-        text.trim(),
+        text === null ? null : text.trim(),
       )
     } catch (e) {
       setState((s) => ({
@@ -220,7 +223,15 @@ function MainApp({ srv }: { srv: ReturnType<typeof useServerState> }) {
                 }}
               />
             )}
-            {tab === 'coach' && <Coach chat={state.chat} sending={sending} onSend={sendChat} onClear={() => setState((s) => ({ ...s, chat: [] }))} />}
+            {tab === 'coach' && (
+              <Coach
+                chat={state.chat}
+                sending={sending}
+                onSend={sendChat}
+                onRetry={(id) => sendChat(null, id)}
+                onClear={() => setState((s) => ({ ...s, chat: [] }))}
+              />
+            )}
             {tab === 'progress' && <Progress ctx={ctx} state={state} today={today} />}
             {tab === 'me' && (
               <Me
