@@ -29,17 +29,12 @@ export interface WaterDto {
   createdAt: number
 }
 
-export interface BootstrapPayload {
+export interface BootstrapPayload extends DaysPayload {
   user: { id: string; nickname: string | null }
   profile: { profile: Profile; startDate: string; intensity: number } | null
   avatar: { skin: string; outfit: string } | null
   facilities: Facility[]
   activeSession: TrainingSession | null
-  from: string
-  to: string
-  days: DayDto[]
-  water: WaterDto[]
-  meals: MealRecord[]
   /** 全部训练记录（等级由全部记录推算） */
   sessions: TrainingSession[]
 }
@@ -53,6 +48,7 @@ export function mealFromRecord(m: MealRecord): Meal {
     id: m.id,
     slot: m.slot,
     text: m.title,
+    eatenAt: opt(m.eatenAt),
     kcal: opt(m.kcal),
     protein: opt(m.proteinG),
     carbsG: opt(m.carbsG),
@@ -64,7 +60,17 @@ export function mealFromRecord(m: MealRecord): Meal {
   }
 }
 
-export function fromBootstrap(b: BootstrapPayload, chat: ChatMsg[] = []): AppState {
+/** GET /days 的返回：一段日期内的日数据（启动数据里也有同样的几项） */
+export interface DaysPayload {
+  from: string
+  to: string
+  days: DayDto[]
+  water: WaterDto[]
+  meals: MealRecord[]
+}
+
+/** 日数据 → 本地按日期存放的 DayLog */
+export function daysFromPayload(b: DaysPayload): Record<string, DayLog> {
   const days: Record<string, DayLog> = {}
   const day = (date: string) => (days[date] ??= emptyDay())
   for (const d of b.days) {
@@ -76,7 +82,11 @@ export function fromBootstrap(b: BootstrapPayload, chat: ChatMsg[] = []): AppSta
   }
   for (const w of b.water) day(w.date).water += w.ml
   for (const m of b.meals) day(m.date).meals.push(mealFromRecord(m))
+  return days
+}
 
+export function fromBootstrap(b: BootstrapPayload, chat: ChatMsg[] = []): AppState {
+  const days = daysFromPayload(b)
   const base = initialState()
   const game: GameState = {
     facilities: b.facilities,
@@ -101,6 +111,7 @@ export function mealToBody(date: string, m: Meal) {
     date,
     slot: m.slot,
     title: m.text.slice(0, 60),
+    eatenAt: m.eatenAt ?? null,
     kcal: m.kcal ?? null,
     proteinG: m.protein ?? null,
     carbsG: m.carbsG ?? null,

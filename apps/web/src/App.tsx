@@ -3,8 +3,9 @@ import { ops, streak, uid } from './lib/store'
 import { useServerState } from './lib/useServerState'
 import Login from './screens/Login'
 import { completedSessions, trainingOps, type Rpe, type SessionDetails } from '@tmc/core/training'
-import { assess, buildWorkout, dateKey, daysBetween, phaseOf, weekSchedule, weekdayIndex, type PlanCtx, type Profile, type Workout } from '@tmc/core/plan'
+import { assess, buildWorkout, daysBetween, phaseOf, weekSchedule, weekdayIndex, type PlanCtx, type Profile, type Workout } from '@tmc/core/plan'
 import { runChat } from './lib/ai'
+import { appToday, dateAt } from '@tmc/core/day'
 import Welcome from './screens/Welcome'
 import Assessment from './screens/Assessment'
 import Generating from './screens/Generating'
@@ -58,7 +59,11 @@ function MainApp({ srv }: { srv: ReturnType<typeof useServerState> }) {
   const [sending, setSending] = useState(false)
   const sendingRef = useRef(false) // 同步锁，防止连点重复发送
 
-  const today = dateKey(new Date())
+  // 凌晨 4 点换天：00:00–03:59 仍算前一天
+  const today = appToday()
+  /** 今日页正在查看的日期（null = 今天） */
+  const [viewDate, setViewDate] = useState<string | null>(null)
+  const date = viewDate && viewDate < today ? viewDate : today
   const ctx = useMemo((): PlanCtx | null => {
     if (!state.profile || !state.startDate) return null
     const p = state.profile
@@ -67,7 +72,7 @@ function MainApp({ srv }: { srv: ReturnType<typeof useServerState> }) {
     const week = Math.min(a.weeks, Math.floor(dayIdx / 7) + 1)
     const phase = phaseOf(week, a.weeks)
     const schedule = weekSchedule(p)
-    const kind = schedule[weekdayIndex(new Date())]
+    const kind = schedule[weekdayIndex(dateAt(today))]
     const workout = buildWorkout(p, kind, dayIdx + 1, phase, state.intensity)
     return { p, a, dayIdx, week, phase, schedule, kind, workout }
   }, [state.profile, state.startDate, state.intensity, today])
@@ -202,6 +207,13 @@ function MainApp({ srv }: { srv: ReturnType<typeof useServerState> }) {
                 ctx={ctx}
                 state={state}
                 today={today}
+                date={date}
+                onDate={(d) => {
+                  if (d < (state.startDate ?? d)) return
+                  srv.ensureDays(d)
+                  setViewDate(d === today ? null : d)
+                }}
+                onNeedDays={srv.ensureDays}
                 apply={(op) => setState(op)}
                 onStart={(w) => {
                   setActive(w)
@@ -232,7 +244,19 @@ function MainApp({ srv }: { srv: ReturnType<typeof useServerState> }) {
                 onClear={() => setState((s) => ({ ...s, chat: [] }))}
               />
             )}
-            {tab === 'progress' && <Progress ctx={ctx} state={state} today={today} />}
+            {tab === 'progress' && (
+              <Progress
+                ctx={ctx}
+                state={state}
+                today={today}
+                onNeedDays={srv.ensureDays}
+                onOpenDate={(d) => {
+                  srv.ensureDays(d)
+                  setViewDate(d === today ? null : d)
+                  setTab('today')
+                }}
+              />
+            )}
             {tab === 'me' && (
               <Me
                 ctx={ctx}
@@ -258,7 +282,14 @@ function MainApp({ srv }: { srv: ReturnType<typeof useServerState> }) {
           </div>
           <nav className="tabbar">
             {TABS.map(([k, label, d]) => (
-              <button key={k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>
+              <button
+                key={k}
+                className={tab === k ? 'on' : ''}
+                onClick={() => {
+                  if (k === 'today' && tab === 'today') setViewDate(null) // 在今日页再点一次"今日"：回到今天
+                  setTab(k)
+                }}
+              >
                 <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                   <path d={d} />
                 </svg>

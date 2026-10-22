@@ -97,3 +97,13 @@ describe('本地修改 → 接口请求', () => {
     expect(diffState(s, next, newId)).toEqual([expect.objectContaining({ method: 'PUT', path: '/profile', body: { profile, startDate: D, intensity: 1 } })])
   })
 })
+
+describe('饮食的真实时间', () => {
+  it('eatenAt 原样往返；补录（没有时间）发 null', () => {
+    const s = fromBootstrap(payload)
+    const withTime = ops.addMeal(D, { id: 'm3', slot: 'snack', text: '夜宵', kcal: 300, source: 'app', eatenAt: 1792690200000 })(s)
+    expect(diffState(s, withTime, newId)[0].body).toMatchObject({ eatenAt: 1792690200000 })
+    const noTime = ops.addMeal(D, { id: 'm4', slot: 'lunch', text: '补录午饭', kcal: 500, source: 'app' })(s)
+    expect(diffState(s, noTime, newId)[0].body).toMatchObject({ eatenAt: null })
+  })
+})

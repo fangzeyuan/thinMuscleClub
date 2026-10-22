@@ -15,6 +15,8 @@ export interface Meal {
   protein?: number
   kcal?: number
   source: Source
+  /** 真实的进食时间（毫秒）。date 是"归属哪一天"（凌晨 4 点换天），这里保留真实时间；补录过去的日子时不知道具体时间，为空 */
+  eatenAt?: number
   /** 以下字段来自服务端饮食模型（docs/backend-design.md 4.3b），本地原样保留，避免保存时丢失 */
   carbsG?: number
   fatG?: number

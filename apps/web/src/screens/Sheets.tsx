@@ -1,3 +1,5 @@
+import { ACTIVITIES } from '@tmc/core/data/activities'
+import type { Rpe } from '@tmc/core/training'
 import { useState, type ReactNode } from 'react'
 import { SLOT_LABEL, uid, type Meal, type Slot, type Sleep } from '../lib/store'
 
@@ -153,6 +155,53 @@ export function BodySheet({
       </div>
       <p className="note calm">体重每天波动 ±1kg 很正常（喝水、盐分、经期都会影响）。建议每天早上空腹称，只看 7 日平均。</p>
       <button className="btn primary block" onClick={() => onSave(parse(w), parse(wa))}>
+        保存
+      </button>
+    </Sheet>
+  )
+}
+
+/** 补录训练：忘了在小镇计时、或者补记过去某天的训练 */
+export function WorkoutSheet({ dateText, onSave, onClose }: { dateText: string; onSave: (w: { activityId: string; minutes: number; rpe?: Rpe }) => void; onClose: () => void }) {
+  const [activityId, setActivityId] = useState('gym_strength')
+  const [minutes, setMinutes] = useState('45')
+  const [rpe, setRpe] = useState<Rpe | undefined>()
+  const n = Number(minutes)
+  const valid = Number.isFinite(n) && n >= 1 && n <= 600
+  return (
+    <Sheet title={`补录训练 · ${dateText}`} onClose={onClose}>
+      <div className="field-label">项目</div>
+      <div className="chips">
+        {ACTIVITIES.filter((a) => a.id !== 'guided').map((a) => (
+          <button key={a.id} className={`chip-btn ${activityId === a.id ? 'on' : ''}`} onClick={() => setActivityId(a.id)}>
+            {a.name}
+          </button>
+        ))}
+      </div>
+      <div className="field-label">时长（分钟）</div>
+      <div className="chips">
+        {[20, 30, 45, 60, 90].map((m) => (
+          <button key={m} className={`chip-btn ${minutes === String(m) ? 'on' : ''}`} onClick={() => setMinutes(String(m))}>
+            {m}
+          </button>
+        ))}
+        <input className="chip-input" type="number" inputMode="numeric" value={minutes} onChange={(e) => setMinutes(e.target.value)} />
+      </div>
+      <div className="field-label">感觉如何（可选）</div>
+      <div className="seg">
+        {(
+          [
+            ['easy', '轻松'],
+            ['ok', '刚好'],
+            ['hard', '有点累'],
+          ] as const
+        ).map(([k, t]) => (
+          <button key={k} className={rpe === k ? 'on' : ''} onClick={() => setRpe(rpe === k ? undefined : k)}>
+            {t}
+          </button>
+        ))}
+      </div>
+      <button className="btn primary block" disabled={!valid} onClick={() => onSave({ activityId, minutes: Math.round(n), rpe })}>
         保存
       </button>
     </Sheet>

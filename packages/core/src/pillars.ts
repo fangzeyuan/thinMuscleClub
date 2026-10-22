@@ -1,3 +1,4 @@
+import { appToday, dateAt } from './day'
 import { assess, dateKey, usesAppPlan, weekSchedule, weekdayIndex, type Profile } from './plan'
 import { getDay, type AppState, type DayLog, type DayView, type Sleep } from './state'
 
@@ -67,7 +68,8 @@ export function dayScore(p: Profile, d: DayView, date: string) {
   return Math.round(Object.values(pr).reduce<number>((a, v) => a + (v ?? 0), 0) * 25)
 }
 
-export function lastNDates(n: number, end = new Date()) {
+/** 截至 end（默认按凌晨 4 点换天的今天）的最近 n 天 */
+export function lastNDates(n: number, end = dateAt(appToday())) {
   return Array.from({ length: n }, (_, i) => {
     const d = new Date(end)
     d.setDate(end.getDate() - (n - 1 - i))

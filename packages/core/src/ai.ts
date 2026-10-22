@@ -1,4 +1,5 @@
-import { BODY_TYPE_INFO, DAY_INFO, TARGET_INFO, assess, dateKey, daysBetween, phaseOf, PHASES, usesAppPlan, weekSchedule, weekdayIndex } from './plan'
+import { BODY_TYPE_INFO, DAY_INFO, TARGET_INFO, assess, daysBetween, phaseOf, PHASES, usesAppPlan, weekSchedule, weekdayIndex } from './plan'
+import { appToday, dateAt, isLateNight } from './day'
 import { energyOn } from './energy'
 import { dayKcal, dayProtein, dayScore, lastNDates, sleepHours, targets, weightSeries, EXPECTATIONS, expectationIndex } from './pillars'
 import { SLOT_LABEL, getDay, ops, uid, type AppState, type Slot, type ToolCall } from './state'
@@ -139,19 +140,20 @@ export function buildSystemPrompt(s: AppState, now = new Date()): string {
   const p = s.profile!
   const a = assess(p)
   const t = targets(p)
-  const today = dateKey(now)
+  const today = appToday(now)
+  const todayDate = dateAt(today)
   const dayIdx = Math.max(0, daysBetween(s.startDate!, today))
   const week = Math.min(a.weeks, Math.floor(dayIdx / 7) + 1)
   const sched = weekSchedule(p)
-  const todayKind = sched[weekdayIndex(now)]
+  const todayKind = sched[weekdayIndex(todayDate)]
   const exp = EXPECTATIONS[expectationIndex(week)]
-  const yesterday = lastNDates(2, now)[0]
+  const yesterday = lastNDates(2, todayDate)[0]
 
-  const ws = weightSeries(s, lastNDates(30, now)).filter((x) => x.raw != null)
+  const ws = weightSeries(s, lastNDates(30, todayDate)).filter((x) => x.raw != null)
   const firstW = ws[0]
   const lastW = ws[ws.length - 1]
 
-  const history = lastNDates(8, now)
+  const history = lastNDates(8, todayDate)
     .slice(0, 7)
     .reverse()
     .filter((date) => date >= s.startDate!) // 注册之前的日子不算
@@ -203,10 +205,17 @@ ${usesAppPlan(p) ? `今天（${today}）按计划是：${DAY_INFO[todayKind].tit
 - 用户在对话中提到任何可记录的信息（体重、腰围、吃了什么、喝水、睡眠、App 外的运动），立即调用工具记录，不要先征求确认。
 - 信息不全时合理估算（例如"一碗牛肉面"≈ 蛋白 25g、550kcal），记录后在回复中用一句话说明估算值，方便用户纠正。
 - 用户纠正时，用 delete_meal 删除旧记录再重新记录。
-- 日期：今天是 ${today}（周${WD[now.getDay()]}），昨天是 ${yesterday}，现在 ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}。"昨晚睡"记在今天；"昨天吃的"记在昨天。
+- 日期：今天是 ${today}（周${WD[todayDate.getDay()]}），昨天是 ${yesterday}，现在 ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}${isLateNight(now) ? `（凌晨，App 按凌晨 4 点换天，现在仍算 ${today}，用户说的"今天"就是 ${today}）` : ''}。"昨晚睡"记在今天；"昨天吃的"记在昨天。
 - 记录完成后，回复里不要复述全部数字，App 界面会显示同步结果。
 
-# 首次对话：测评解读
+${
+    now.getHours() >= 23 || isLateNight(now)
+      ? `# 现在很晚了（${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}）
+回答完用户的问题后，用一句话温和提醒早点睡：睡够 ${t.sleepH} 小时也是薄肌的一部分（睡不够第二天更容易饿、肌肉恢复慢）。不说教；这次对话里已经提醒过就不再重复。
+
+`
+      : ''
+  }# 首次对话：测评解读
 用户刚完成测评、第一次和你说话时（App 还没有任何记录），按下面的结构解读，总共不超过 250 字：
 1) 用一两句话复述 Ta 的情况和薄肌类型，说明这意味着什么（大白话，不堆术语）
 2) 接下来的路线：按阶段各一句话，明确说出"前 2 周镜子里看不出变化是正常的"
@@ -289,7 +298,8 @@ export function executeTool(call: ToolCall, apply: Apply, getState: () => AppSta
       const protein = Math.max(0, Math.round(num('protein_g') || 0))
       const kcal = Math.max(0, Math.round(num('kcal') || 0))
       const id = uid()
-      apply(ops.addMeal(date, { id, slot, text, protein, kcal, source: 'chat' }))
+      // 记今天的饮食时保留真实时间；补记过去的日子不知道具体几点
+      apply(ops.addMeal(date, { id, slot, text, protein, kcal, source: 'chat', eatenAt: date === today ? Date.now() : undefined }))
       const d = getDay(getState(), date)
       return {
         result: JSON.stringify({ ok: true, meal_id: id, day_protein_g: dayProtein(d), day_kcal: dayKcal(d) }),

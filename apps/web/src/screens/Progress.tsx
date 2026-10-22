@@ -1,18 +1,28 @@
 import { useState } from 'react'
-import { DAY_INFO, dateKey, usesAppPlan, type PlanCtx } from '@tmc/core/plan'
-import { EXPECTATIONS, PILLARS, dayProtein, dayScore, expectationIndex, lastNDates, pillarProgress, sleepHours, targets, weightSeries } from '@tmc/core/pillars'
+import { DAY_INFO, dateKey, usesAppPlan, weekdayIndex, type PlanCtx } from '@tmc/core/plan'
+import { dateAt } from '@tmc/core/day'
+import { EXPECTATIONS, dayProtein, dayScore, expectationIndex, lastNDates, sleepHours, targets, weightSeries } from '@tmc/core/pillars'
 import { getDay, mondayOf, type AppState } from '../lib/store'
+import MonthCalendar, { monthOf } from './MonthCalendar'
 import { completedSessions, sessionMinutes, sessionTitle } from '@tmc/core/training'
 
 const WD = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
 
-export default function Progress({ ctx, state, today }: { ctx: PlanCtx; state: AppState; today: string }) {
+interface Props {
+  ctx: PlanCtx
+  state: AppState
+  today: string
+  onNeedDays: (from: string) => void
+  onOpenDate: (date: string) => void
+}
+
+export default function Progress({ ctx, state, today, onNeedDays, onOpenDate }: Props) {
+  const [calMonth, setCalMonth] = useState(monthOf(today))
   const { p, a, week, schedule } = ctx
   const t = targets(p)
   const ei = expectationIndex(week)
   const startDate = state.startDate!
 
-  const d14 = lastNDates(14).filter((d) => d >= startDate)
   const last7 = lastNDates(7)
   const prev7 = lastNDates(14).slice(0, 7)
 
@@ -86,9 +96,21 @@ export default function Progress({ ctx, state, today }: { ctx: PlanCtx; state: A
 
       <section className="card">
         <h3>
-          过程打卡 <small>近 {d14.length} 天</small>
+          打卡月历 <small>点某天可以查看和补录</small>
         </h3>
-        <Heatmap state={state} dates={d14} />
+        <div className="top8">
+          <MonthCalendar
+            state={state}
+            month={calMonth}
+            today={today}
+            min={startDate}
+            onMonth={(m) => {
+              setCalMonth(m)
+              onNeedDays(`${m}-01`)
+            }}
+            onSelect={onOpenDate}
+          />
+        </div>
       </section>
 
       <section className="card">
@@ -125,7 +147,7 @@ export default function Progress({ ctx, state, today }: { ctx: PlanCtx; state: A
           <h3>本周训练安排</h3>
           <ul className="sched">
             {schedule.map((k, i) => (
-              <li key={i} className={`${i === (new Date().getDay() + 6) % 7 ? 'today' : ''} ${k === 'rest' ? 'rest' : ''}`}>
+              <li key={i} className={`${i === weekdayIndex(dateAt(today)) ? 'today' : ''} ${k === 'rest' ? 'rest' : ''}`}>
                 <span className="sched-day">{WD[i]}</span>
                 <div>
                   <b>{DAY_INFO[k].title}</b>
@@ -137,42 +159,6 @@ export default function Progress({ ctx, state, today }: { ctx: PlanCtx; state: A
         </section>
       )}
     </div>
-  )
-}
-
-function Heatmap({ state, dates }: { state: AppState; dates: string[] }) {
-  const p = state.profile!
-  const [tip, setTip] = useState<string | null>(null)
-  if (!dates.length) return <p className="muted small top8">开始记录后，这里会显示每天的完成情况。</p>
-  return (
-    <>
-      <div className="heat" style={{ gridTemplateColumns: `28px repeat(${dates.length}, 1fr)` }}>
-        {PILLARS.map((x) => (
-          <div key={x.k} className="heat-row" style={{ display: 'contents' }}>
-            <span className="heat-label">{x.name}</span>
-            {dates.map((d) => {
-              const v = pillarProgress(p, getDay(state, d), d)[x.k]
-              const level = v == null ? 0 : v >= 0.9 ? 3 : v >= 0.5 ? 2 : v > 0 ? 1 : 0
-              return (
-                <button
-                  key={d}
-                  className={`heat-cell l${level}`}
-                  style={{ ['--pc' as string]: x.color }}
-                  aria-label={`${d} ${x.name} ${v == null ? '未记录' : Math.round(v * 100) + '%'}`}
-                  onClick={() => setTip(`${d.slice(5)} · ${x.name}：${v == null ? '未记录' : `完成 ${Math.round(v * 100)}%`}`)}
-                />
-              )
-            })}
-          </div>
-        ))}
-      </div>
-      <div className="heat-foot">
-        <span>{tip ?? `${dates[0].slice(5)} → 今天`}</span>
-        <span className="heat-legend">
-          未记录 <i className="l0" /> <i className="l1" /> <i className="l2" /> <i className="l3" /> 达标
-        </span>
-      </div>
-    </>
   )
 }
 

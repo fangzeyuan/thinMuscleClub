@@ -7,9 +7,9 @@
  * - 多端：回到前台、以及前台每 60 秒，在没有未完成请求时重新拉取
  * - 聊天记录暂存本机（P2 移到服务端）
  */
-import { dateKey } from '@tmc/core/plan'
+import { addDays, appToday } from '@tmc/core/day'
 import { initialState, uid, type AppState, type ChatMsg } from '@tmc/core/state'
-import { diffState, fromBootstrap, type BootstrapPayload, type SyncCall } from '@tmc/core/sync'
+import { daysFromPayload, diffState, fromBootstrap, type BootstrapPayload, type DaysPayload, type SyncCall } from '@tmc/core/sync'
 import { trainingOps, type TrainingSession } from '@tmc/core/training'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, api, authApi, refreshSession, setOnUnauthenticated } from './api'
@@ -36,6 +36,8 @@ const write = (key: string, value: unknown) => {
 }
 
 type Queue = Record<string, SyncCall>
+
+const olderThan = (days: AppState['days'], from: string) => Object.fromEntries(Object.entries(days).filter(([d]) => d < from))
 
 /** 上次关掉 App 时还在生成中的回复：标为中断、可重试 */
 const restoreChat = (chat: ChatMsg[]) =>
@@ -84,6 +86,8 @@ export function useServerState() {
 
   /* ---------- 拉取（同一时间只跑一个，并发调用复用同一次请求） ---------- */
   const loading = useRef<Promise<void> | null>(null)
+  /** 已经加载到的最早日期（更早的按需加载） */
+  const loadedFrom = useRef<string | null>(null)
   const load = useCallback((silent = false) => {
     loading.current ??= doLoad(silent).finally(() => {
       loading.current = null
@@ -95,13 +99,16 @@ export function useServerState() {
   const doLoad = async (silent: boolean) => {
     if (!silent) setPhase('loading')
     try {
-      const b = await api<BootstrapPayload>(`/bootstrap?today=${dateKey(new Date())}`)
+      const b = await api<BootstrapPayload>(`/bootstrap?today=${appToday()}`)
       userId.current = b.user.id
       write(LAST_USER, b.user.id)
       const s = overlayQueue(fromBootstrap(b, silent ? [] : restoreChat(read(k('chat', b.user.id), []))), queue())
       // 后台刷新只更新数据，聊天保留内存里的（否则正在到达的回复会被覆盖掉）
-      synced.current = silent ? { ...s, chat: stateRef.current.chat } : s
-      setState((cur) => (silent ? { ...s, chat: cur.chat } : s))
+      // 后台刷新：保留内存里的聊天，以及之前按需加载的更早日期（启动数据只含近 35 天）
+      const keep = (cur: AppState): AppState => ({ ...s, chat: cur.chat, days: { ...olderThan(cur.days, b.from), ...s.days } })
+      if (!silent || loadedFrom.current === null || b.from < loadedFrom.current) loadedFrom.current = b.from
+      synced.current = silent ? keep(synced.current ?? stateRef.current) : s
+      setState((cur) => (silent ? keep(cur) : s))
       setOffline(false)
       setNotice((n) => (n?.startsWith('网络不可用') ? null : n)) // 恢复联网后清掉断网提示
       setPendingCount(Object.keys(queue()).length)
@@ -248,6 +255,27 @@ export function useServerState() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, flush, load])
 
+  /* ---------- 按需加载更早的日期（日历、补录） ---------- */
+  const ensureDays = useCallback(async (from: string) => {
+    let have = loadedFrom.current
+    if (!have || from >= have) return
+    try {
+      // 接口一次最多 92 天：从已加载的最早日期往前分段拉
+      while (have && from < have) {
+        const to = addDays(have, -1)
+        const start = addDays(to, -89) < from ? from : addDays(to, -89)
+        const p = await api<DaysPayload>(`/days?from=${start}&to=${to}`)
+        const older = daysFromPayload(p)
+        // 同时写进"已同步"和当前状态：这是服务端已有的数据，不产生任何保存请求
+        if (synced.current) synced.current = { ...synced.current, days: { ...older, ...synced.current.days } }
+        setState((cur) => ({ ...cur, days: { ...older, ...cur.days } }))
+        loadedFrom.current = have = start
+      }
+    } catch {
+      setNotice('网络不可用，更早的记录暂时加载不了')
+    }
+  }, [])
+
   /* ---------- 登录 / 退出 ---------- */
   const afterLogin = useCallback(() => load(), [load])
 
@@ -274,6 +302,7 @@ export function useServerState() {
     notice,
     clearNotice: () => setNotice(null),
     afterLogin,
+    ensureDays,
     logout,
   }
 }

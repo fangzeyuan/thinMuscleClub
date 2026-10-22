@@ -527,18 +527,6 @@ input, textarea { font: inherit; font-size: 16px; color: var(--text); }
 .wins span { font-size: 11.5px; color: var(--muted); line-height: 1.4; }
 .wins em { font-style: normal; font-size: 11px; color: var(--accent-ink); font-weight: 600; }
 
-.heat { display: grid; gap: 4px; margin-top: 14px; align-items: center; }
-.heat-label { font-size: 12px; font-weight: 700; color: var(--text-2); }
-.heat-cell { aspect-ratio: 1; border-radius: 4px; background: var(--line); min-width: 0; }
-.heat-cell.l1 { background: color-mix(in srgb, var(--pc) 30%, white); }
-.heat-cell.l2 { background: color-mix(in srgb, var(--pc) 60%, white); }
-.heat-cell.l3 { background: var(--pc); }
-.heat-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 11.5px; color: var(--muted); gap: 8px; }
-.heat-legend { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
-.heat-legend i { width: 10px; height: 10px; border-radius: 3px; background: var(--line); }
-.heat-legend i.l1 { background: #b8eedb; }
-.heat-legend i.l2 { background: #71d6b2; }
-.heat-legend i.l3 { background: var(--accent); }
 
 .wchart { position: relative; margin-top: 12px; touch-action: pan-y; }
 .wchart svg { width: 100%; height: auto; display: block; }
@@ -636,3 +624,50 @@ input, textarea { font: inherit; font-size: 16px; color: var(--text); }
 .bubble .cursor { display: inline-block; width: 2px; height: 1em; background: var(--accent); margin-left: 2px; vertical-align: -2px; animation: blink 1s steps(1) infinite; }
 .bubble .retry { display: block; margin-top: 8px; font-size: 13px; font-weight: 600; color: var(--accent-ink); background: #fff; border-radius: 99px; padding: 5px 14px; }
 .bubble .retry:disabled { opacity: 0.5; }
+
+/* ---------- 月历 / 日期切换 ---------- */
+.month-cal { display: grid; gap: 10px; }
+.mc-head { display: flex; align-items: center; justify-content: space-between; }
+.mc-head b { font-size: 15px; }
+.mc-head .icon-btn { font-size: 22px; color: var(--text-2); }
+.mc-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.mc-wd { text-align: center; font-size: 11.5px; color: var(--muted); padding-bottom: 2px; }
+.mc-day { position: relative; aspect-ratio: 1; border-radius: 10px; font-size: 13.5px; font-variant-numeric: tabular-nums; color: var(--text); background: var(--bg); border: 1.5px solid transparent; }
+.mc-day.l1 { background: #dff5ec; }
+.mc-day.l2 { background: #9fe0c6; }
+.mc-day.l3 { background: var(--accent); color: #fff; }
+.mc-day.today { font-weight: 800; }
+.mc-day.sel { border-color: var(--text); }
+.mc-day:disabled { color: #c3c8d0; background: transparent; }
+.mc-day i { position: absolute; left: 50%; bottom: 4px; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--text); opacity: 0.55; }
+.mc-day.l3 i { background: #fff; opacity: 0.9; }
+.mc-legend { display: flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--muted); }
+.mc-legend > i { width: 12px; height: 12px; border-radius: 3px; background: var(--bg); }
+.mc-legend > i.l1 { background: #dff5ec; }
+.mc-legend > i.l2 { background: #9fe0c6; }
+.mc-legend > i.l3 { background: var(--accent); }
+.mc-legend .dot-key { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; }
+.mc-legend .dot-key i { width: 4px; height: 4px; border-radius: 50%; background: var(--text); opacity: 0.55; }
+
+.date-strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; flex-shrink: 0; }
+.date-strip button { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 0; border-radius: 14px; color: var(--muted); font-size: 11px; }
+.date-strip button b { font-size: 15px; color: var(--text); width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-variant-numeric: tabular-nums; }
+.date-strip button i { width: 5px; height: 5px; border-radius: 50%; background: transparent; }
+.date-strip button i.has { background: var(--accent); }
+.date-strip button.sel { background: var(--card); box-shadow: var(--shadow); color: var(--accent-ink); }
+.date-strip button.sel b { background: var(--accent); color: #fff; }
+.date-strip button.today b { font-weight: 800; }
+.date-strip button:disabled { opacity: 0.35; }
+.date-btn { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--muted); padding: 0; }
+.date-btn::after { content: '▾'; font-size: 10px; }
+.back-today { font-size: 12.5px; font-weight: 600; color: var(--accent-ink); background: var(--accent-soft); border-radius: 99px; padding: 6px 12px; white-space: nowrap; }
+.past-note { font-size: 12.5px; color: #4a5a85; background: #f2f6ff; border-radius: 12px; padding: 8px 12px; flex-shrink: 0; }
+.mini-log li { display: flex; align-items: center; gap: 6px; }
+.mini-log .x { margin-left: auto; color: var(--muted); font-size: 16px; padding: 0 4px; }
+.ai-tag.manual { color: #8a5a14; background: #fff2dc; }
+.mini-log .confirm-del { font-size: 12px; font-weight: 600; color: var(--danger); }
+.bedtime { display: flex; gap: 12px; background: linear-gradient(135deg, #2b3157, #3d4680); color: #fff; }
+.bedtime .moon { font-size: 26px; line-height: 1; color: #ffe28a; }
+.bedtime b { font-size: 15.5px; }
+.bedtime p { font-size: 13px; line-height: 1.6; opacity: 0.85; margin: 6px 0 10px; }
+.bedtime button { font-size: 13px; font-weight: 600; color: #2b3157; background: #ffe28a; border-radius: 99px; padding: 6px 14px; }

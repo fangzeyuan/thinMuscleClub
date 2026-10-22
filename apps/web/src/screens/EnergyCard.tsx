@@ -4,13 +4,15 @@ import type { Energy } from '@tmc/core/energy'
 
 interface Props {
   e: Energy
+  /** 卡片标题：今日热量 / 当天热量 */
+  title?: string
   balance: { days: number; avg: number; kgPerWeek: number } | null
   onAddMeal: () => void
   onAsk: (text: string) => void
 }
 
 /** 首页主视图：热量预算、已摄入、运动消耗、剩余 */
-export default function EnergyCard({ e, balance, onAddMeal, onAsk }: Props) {
+export default function EnergyCard({ e, title = '今日热量', balance, onAddMeal, onAsk }: Props) {
   const [open, setOpen] = useState(false)
   const over = e.remaining < 0
   const ratio = Math.min(1, e.intake / e.budget)
@@ -21,7 +23,7 @@ export default function EnergyCard({ e, balance, onAddMeal, onAsk }: Props) {
   return (
     <section className="card energy-card">
       <div className="ec-head">
-        <h3>今日热量</h3>
+        <h3>{title}</h3>
         <button className="link" onClick={() => setOpen(!open)}>
           {open ? '收起' : '怎么算的？'}
         </button>
@@ -67,7 +69,7 @@ export default function EnergyCard({ e, balance, onAddMeal, onAsk }: Props) {
 
       {over && <p className="note calm">偶尔超一点没关系，身体看的是一周的平均。明天按计划吃就好，不用刻意少吃补回来。</p>}
 
-      {e.unknownMeals > 0 && (
+      {e.unknownMeals > 0 && title === '今日热量' && (
         <button className="ec-unknown" onClick={() => onAsk('帮我估算一下今天没填热量的那几餐，重新记录一下')}>
           有 {e.unknownMeals} 餐没有填热量，没算进已摄入。让小薄帮你估算 →
         </button>
